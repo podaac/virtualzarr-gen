@@ -32,11 +32,6 @@ data "aws_subnet" "private_application_subnet" {
   id       = each.value
 }
 
-// How annoying
-locals{
-    azs = tolist([for k, v in data.aws_subnet.private_application_subnet : v.availability_zone])
-}
-
 data "aws_subnets" "private_application_subnets" {
   filter {
     name   = "vpc-id"

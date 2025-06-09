@@ -248,7 +248,6 @@ resource "aws_iam_instance_profile" "ec2profile" {
 resource "aws_autoscaling_group" "app-ag" {
   name = "${local.resource_prefix}-app-asg"
   vpc_zone_identifier = [for subnet in data.aws_subnet.private_application_subnet: subnet.id]
-  //local.azs
   
   desired_capacity   = 0
   max_size           = 2
