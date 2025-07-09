@@ -7,7 +7,7 @@ Fundamentally, the notebook within this repository will access all the files of 
 
 | Environment Variable  | Definition |Example |  Used in |
 | ------------- | ------------- | ------------- | ------------- |
-|  LOADABLE_VARS |  The variables required to do the mapping of the dataset. OFten these are the dimmension/coordinate data within a netcdf file. | `["lat","lon","time"]` - note, no spaces! | Notebook |
+|  LOADABLE_VARS |  The variables whos data values will be included in the virtual dataset files. These can be used without accessing actual data files. Often these are the dimmension/coordinate data within a netcdf file. | `lat,lon,time` - note, no spaces! | Notebook |
 |  COLLECTION | the collection name to generate virtual datasets for. This is used in the Earthaccess search.  | `MUR-JPL-L4-GLOB-v4.1`| Notebook |
 |  START_DATE | Start data of data range to process  | `1-1-2022` | Notebook |
 |  END_DATE |  End date of data range to process |`12-31-2022` | Notebook |
