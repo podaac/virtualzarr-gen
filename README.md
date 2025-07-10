@@ -2,6 +2,44 @@
 
 The purpose of this repository is to provide an operationalized mechanism for generating kerchunk virtual data stores for Level 3 and Level 4 data products. Level 2 products will be added in time as well. The resulting virtual dataset will offer chunked data access within the us-west-2 region ***AS WELL AS*** remote, non-cloud access. That is, users can run the same workflows within and outside of the cloud and reap the benefits of cloud optimized access.
 
+# Quick Setup and Run
+
+Ensure you have a `.netrc` file setup to utilize earthaccess access features.
+
+```
+conda create --name cloudgen
+conda activate cloudgen
+pip install -r requirements.txt 
+papermill generate_cloud_optimized_store_https.ipynb output.ipynb --log-output  -p collection TELLUS_GRAC-GRFO_MASCON_CRI_GRID_RL06.3_V4 -p loadable_coord_vars 'lat,lon,time' 
+```
+
+If you get an error during build that looks like:
+```
+Collecting pyyaml>=5.3.1 (from dask==2024.5.2->dask[complete]==2024.5.2->-r requirements.txt (line 6))
+  Using cached PyYAML-6.0.1.tar.gz (125 kB)
+  Installing build dependencies ... done
+  Getting requirements to build wheel ... done
+  Preparing metadata (pyproject.toml) ... done
+  Using cached PyYAML-6.0.tar.gz (124 kB)
+  Installing build dependencies ... done
+  Getting requirements to build wheel ... error
+  error: subprocess-exited-with-error
+  
+  × Getting requirements to build wheel did not run successfully.
+  │ exit code: 1
+  ╰─> [78 lines of output]
+      /private/var/folders/db/wncsd6tj18dgzwxnzqgcxtq80000gq/T/pip-build-env-6_qz3z8j/overlay/lib/python3.13/site-packages/setuptools/dist.py:759: SetuptoolsDeprecationWarning: License classifiers are deprecated.
+      !!
+
+```
+
+run:
+```
+pip install PyYAML==6.0.2
+```
+and try again.
+
+
 # How it works
 Fundamentally, the notebook within this repository will access all the files of a given collection (filterable by start and end dates if desired), and generate kerchunk datamaps for each file, and then aggregate them all into a single virtual datastore file. The notebook can be run manually, but has been converted into a papermill notebook that is run within the docker container generated from this repository. There are several environment variables required by the Docker container to run effectively.
 
