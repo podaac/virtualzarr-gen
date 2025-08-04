@@ -48,7 +48,7 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
         {
             "name": "cloud-optimization-generation",
-            "image": "gangl/cog:latest",
+            "image": "ghcr.io/podaac/virtualzarr-gen:main",
             "cpu": 0,
             "memory": 28672,
             "memoryReservation": 25600,
