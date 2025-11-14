@@ -233,8 +233,7 @@ resource "aws_launch_template" "app-lt" {
   vpc_security_group_ids = [data.aws_security_groups.vpc_default_sg.ids[0]]
   instance_type = "c5.4xlarge"
   user_data = base64encode(templatefile("scripts/ecs.sh", { ecs_cluster = aws_ecs_cluster.default.name}))
-
-  
+  update_default_version = true
 }
 
 /* Instance Profile */

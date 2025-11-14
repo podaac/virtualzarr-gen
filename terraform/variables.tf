@@ -22,7 +22,7 @@ variable "output_bucket" {
 }
 
 variable "region" {
-    default="us-west-2"
+    default = "us-west-2"
     type = string
 }
 
@@ -30,6 +30,7 @@ variable "ami_id_ssm_name" {
     default = "/ngap/amis/image_id_ecs_al2023_x86"
     description = "Name of the SSM Parameter that contains the NGAP approved ECS AMI ID."
 }
+
 /*
 variable "container_image" {
     type = string
