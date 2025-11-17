@@ -50,8 +50,8 @@ resource "aws_ecs_task_definition" "app" {
             "name": "cloud-optimization-generation",
             "image": "ghcr.io/podaac/virtualzarr-gen:main",
             "cpu": 0,
-            "memory": 28672,
-            "memoryReservation": 25600,
+            "memory": 65536,
+            "memoryReservation": 61440,
             "portMappings": [
                 {
                     "name": "workers",
@@ -231,7 +231,7 @@ resource "aws_launch_template" "app-lt" {
   }
   image_id = data.aws_ssm_parameter.ecs_amis.value
   vpc_security_group_ids = [data.aws_security_groups.vpc_default_sg.ids[0]]
-  instance_type = "c5.4xlarge"
+  instance_type = "c5.9xlarge"
   user_data = base64encode(templatefile("scripts/ecs.sh", { ecs_cluster = aws_ecs_cluster.default.name}))
   update_default_version = true
 }
