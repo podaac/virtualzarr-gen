@@ -16,12 +16,13 @@ import dask.array as da
 from dask.distributed import Client
 
 def setup_logging(debug=False):
+    log_format = "%(asctime)s %(levelname)s %(message)s"
     if debug:
-        logging.basicConfig(level=logging.DEBUG)
+        logging.basicConfig(level=logging.DEBUG, format=log_format)
         log = logging.getLogger('urllib3')
         log.setLevel(logging.DEBUG)
     else:
-        logging.basicConfig(level=logging.INFO)
+        logging.basicConfig(level=logging.INFO, format=log_format)
 
 def opends_withref(ref, fs_data):
     """Open dataset from a reference file using xarray."""
@@ -36,16 +37,16 @@ def opends_withref(ref, fs_data):
 
 @delayed
 def open_vds_par(datalink, reader_options=None, loadable_variables=None):
+    logging.info(datalink)
     for cnt in range(1, 5):
         try:
             if cnt != 1:
-                print(f"Retrying ({cnt}) {datalink}")
+                logging.debug(f"Retrying ({cnt}) {datalink}")
             return open_virtual_dataset(
                 datalink, indexes={}, reader_options=reader_options,
                 loadable_variables=loadable_variables, decode_times=False
             )
         except Exception as e:
-            print(e)
             logging.debug(e)
             time.sleep(cnt ** 2)
     raise Exception(f"Could not process file {datalink}")
@@ -121,7 +122,7 @@ def main(
         open_vds_par(p, reader_options=reader_opts, loadable_variables=coord_vars)
         for p in data_https_links
     ]
-    virtual_ds_list = list(da.compute(*tasks))
+    virtual_ds_list = da.compute(tasks)[0]
 
     # Combine references
     logging.info("Combining references...")
