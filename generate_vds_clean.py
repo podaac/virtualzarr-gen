@@ -37,7 +37,8 @@ def opends_withref(ref, fs_data):
 
 @delayed
 def open_vds_par(datalink, reader_options=None, loadable_variables=None):
-    logging.info(datalink)
+    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
+    print(f"{timestamp} {datalink}")
     for cnt in range(1, 5):
         try:
             if cnt != 1:
@@ -113,7 +114,7 @@ def main(
     # Parallel reference creation for all files
     logging.info(f"CPU count = {multiprocessing.cpu_count()}")
     #client = Client(n_workers=multiprocessing.cpu_count(), threads_per_worker=1)
-    client = Client(n_workers=16, threads_per_worker=1)
+    client = Client(n_workers=8, threads_per_worker=1)
 
     #logging.info(f"Dask dashboard: {client.dashboard_link}")
 
