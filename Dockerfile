@@ -7,6 +7,7 @@ RUN pip install numcodecs==0.15.1
 RUN apt-get update; apt-get install -y jq awscli
 
 COPY generate_cloud_optimized_store_https.ipynb .
+COPY generate_vds_clean.py .
 
 COPY wrapper.sh .
 RUN chmod 755 wrapper.sh

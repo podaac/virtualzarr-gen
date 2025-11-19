@@ -89,8 +89,15 @@ resource "aws_ecs_task_definition" "app" {
                 {
                     "name": "SSM_EDL_PASSWORD",
                     "value": ""
+                },
+                {
+                    "name": "START_DATE",
+                    "value": ""
+                },
+                {
+                    "name": "END_DATE",
+                    "value": ""
                 }
-                
             ],
             "logConfiguration": {
                 "logDriver": "awslogs",
