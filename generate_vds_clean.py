@@ -58,10 +58,10 @@ def main(
     debug=False
 ):
     setup_logging(debug)
-    print(f"Collection: {collection}")
-    print(f"Vars: {loadable_coord_vars}")
-    print(f"start_date: {start_date}")
-    print(f"end_date: {end_date}")
+    logging.info(f"Collection: {collection}")
+    logging.info(f"Vars: {loadable_coord_vars}")
+    logging.info(f"start_date: {start_date}")
+    logging.info(f"end_date: {end_date}")
 
     xr.set_options(
         display_expand_attrs=False,
@@ -87,33 +87,33 @@ def main(
     # Get HTTPS links
     data_https_links = [g.data_links(access="https")[0] for g in granule_info]
     if not data_https_links:
-        print("No data links found.")
+        logging.info("No data links found.")
         sys.exit(1)
 
     coord_vars = loadable_coord_vars.split(",")
     reader_opts = {"storage_options": fs.storage_options}
 
     # Create reference for the first data file
-    print("Generating reference for first file...")
-    virtual_ds_example = open_virtual_dataset(
-        data_https_links[0], indexes={},
-        reader_options=reader_opts, loadable_variables=coord_vars, decode_times=False
-    )
-    virtual_ds_example.virtualize.to_kerchunk('virtual_ds_example.json', format='json')
-    print("Saved: virtual_ds_example.json")
+    #logging.info("Generating reference for first file...")
+    #virtual_ds_example = open_virtual_dataset(
+    #    data_https_links[0], indexes={},
+    #    reader_options=reader_opts, loadable_variables=coord_vars, decode_times=False
+    #)
+    #virtual_ds_example.virtualize.to_kerchunk('virtual_ds_example.json', format='json')
+    #logging.info("Saved: virtual_ds_example.json")
 
     # Test opening with reference
-    data_example = opends_withref('virtual_ds_example.json', fs)
-    print("Test open with reference file:", data_example)
+    #data_example = opends_withref('virtual_ds_example.json', fs)
+    #logging.info(f"Test open with reference file: {data_example}")
 
     # Parallel reference creation for all files
-    print("CPU count =", multiprocessing.cpu_count())
+    logging.info(f"CPU count = {multiprocessing.cpu_count()}")
     #client = Client(n_workers=multiprocessing.cpu_count(), threads_per_worker=1)
     client = Client(n_workers=16, threads_per_worker=1)
 
-    print("Dask dashboard:", client.dashboard_link)
+    #logging.info(f"Dask dashboard: {client.dashboard_link}")
 
-    print("Generating references for all files...")
+    logging.info("Generating references for all files...")
     tasks = [
         open_vds_par(p, reader_options=reader_opts, loadable_variables=coord_vars)
         for p in data_https_links
@@ -121,13 +121,13 @@ def main(
     virtual_ds_list = list(da.compute(*tasks))
 
     # Combine references
-    print("Combining references...")
+    logging.info("Combining references...")
     virtual_ds_combined = xr.combine_nested(
         virtual_ds_list, concat_dim='time', coords="minimal", compat="override", combine_attrs='drop_conflicts'
     )
 
     if not virtual_ds_combined.attrs:
-        print("Global Attributes not found for generated dataset.")
+        logging.info("Global Attributes not found for generated dataset.")
         sys.exit(1)
 
     # Filename for combined reference
@@ -139,11 +139,11 @@ def main(
 
     fname_combined_json = f'{collection}_{temporal}virtual_https.json'
     virtual_ds_combined.virtualize.to_kerchunk(fname_combined_json, format='json')
-    print(f"Saved: {fname_combined_json}")
+    logging.info(f"Saved: {fname_combined_json}")
 
     # Test lazy loading of the combined reference file
     data_json = opends_withref(fname_combined_json, fs)
-    print("Test open with combined reference file:", data_json)
+    logging.info(f"Test open with combined reference file: {data_json}")
 
     client.close()
 
