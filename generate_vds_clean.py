@@ -109,7 +109,7 @@ def main(
     # Parallel reference creation for all files
     print("CPU count =", multiprocessing.cpu_count())
     #client = Client(n_workers=multiprocessing.cpu_count(), threads_per_worker=1)
-    client = Client(n_workers=4, threads_per_worker=1)
+    client = Client(n_workers=16, threads_per_worker=1)
 
     print("Dask dashboard:", client.dashboard_link)
 
