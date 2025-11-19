@@ -82,14 +82,17 @@ def main(
             temporal=(start_date, end_date)
         )
     else:
+        logging.info("Getting all granules...")
         granule_info = earthaccess.search_data(short_name=collection)
 
     # Get HTTPS links
+    logging.info(f"Found {len(granule_info)} granules.")
     data_https_links = [g.data_links(access="https")[0] for g in granule_info]
     if not data_https_links:
         logging.info("No data links found.")
         sys.exit(1)
 
+    logging.info(f"Found {len(data_https_links)} data files.")
     coord_vars = loadable_coord_vars.split(",")
     reader_opts = {"storage_options": fs.storage_options}
 
