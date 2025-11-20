@@ -14,7 +14,7 @@ machine urs.earthdata.nasa.gov
   password $edl_password
 EOF
 
-cmd="python3 generate_vds_clean.py --collection $COLLECTION --loadable-coord-vars $LOADABLE_VARS"
+cmd="python3 generate_vds_s3.py --collection $COLLECTION --loadable-coord-vars $LOADABLE_VARS"
 if [[ -n "$startDate" ]]; then
   cmd="$cmd --start-date $startDate"
 fi
