@@ -35,24 +35,6 @@ def opends_withref(ref, fs_data):
     )
     return data
 
-@delayed
-def open_vds_par(datalink, reader_options=None, loadable_variables=None):
-    timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
-    setup_logging(debug=False)
-    logging.info(datalink)
-    for cnt in range(1, 5):
-        try:
-            if cnt != 1:
-                logging.debug(f"Retrying ({cnt}) {datalink}")
-            return open_virtual_dataset(
-                datalink, indexes={}, reader_options=reader_options,
-                loadable_variables=loadable_variables, decode_times=False
-            )
-        except Exception as e:
-            logging.debug(e)
-            time.sleep(cnt ** 2)
-    raise Exception(f"Could not process file {datalink}")
-
 def main(
     collection,
     loadable_coord_vars,
@@ -106,7 +88,7 @@ def main(
 
     open_vds_par = delayed(open_virtual_dataset)
     tasks = [
-        open_vds_par(p, indexes={}, reader_options=reader_opts, loadable_variables=coord_vars) 
+        open_vds_par(p, indexes={}, reader_options=reader_opts, loadable_variables=coord_vars, decode_times=False) 
         for p in data_s3links
         ]
     virtual_ds_list = da.compute(tasks)[0]
