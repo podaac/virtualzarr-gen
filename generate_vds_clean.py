@@ -38,7 +38,8 @@ def opends_withref(ref, fs_data):
 @delayed
 def open_vds_par(datalink, reader_options=None, loadable_variables=None):
     timestamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime())
-    print(f"{timestamp} {datalink}")
+    setup_logging(debug=False)
+    logging.info(datalink)
     for cnt in range(1, 5):
         try:
             if cnt != 1:
@@ -76,6 +77,8 @@ def main(
 
     # Get HTTPS session for fsspec
     fs = earthaccess.get_fsspec_https_session()
+    #fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+    print(fs)
 
     # Search for granules
     if start_date or end_date:
@@ -90,9 +93,11 @@ def main(
     # Get HTTPS links
     logging.info(f"Found {len(granule_info)} granules.")
     data_https_links = [g.data_links(access="https")[0] for g in granule_info]
-    if not data_https_links:
-        logging.info("No data links found.")
-        sys.exit(1)
+    #data_s3links = [g.data_links(access="direct")[0] for g in granule_info]
+
+    #if not data_https_links:
+    #    logging.info("No data links found.")
+    #    sys.exit(1)
 
     logging.info(f"Found {len(data_https_links)} data files.")
     coord_vars = loadable_coord_vars.split(",")
@@ -117,6 +122,15 @@ def main(
     client = Client(n_workers=8, threads_per_worker=1)
 
     #logging.info(f"Dask dashboard: {client.dashboard_link}")
+
+    #open_vds_par = delayed(open_virtual_dataset)
+    #tasks = [
+    #    open_vds_par(p, indexes={}, reader_options=reader_opts, loadable_variables=coord_vars) 
+    #    for p in data_s3links
+    #    ]
+    #virtual_ds_list = da.compute(tasks)[0]
+
+
 
     logging.info("Generating references for all files...")
     tasks = [
