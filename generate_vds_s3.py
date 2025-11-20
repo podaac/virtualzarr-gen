@@ -93,7 +93,7 @@ def main(
     logging.info(f"Found {len(granule_info)} granules.")
     data_s3links = [g.data_links(access="direct")[0] for g in granule_info]
 
-    logging.info(f"Found {len(data_https_links)} data files.")
+    logging.info(f"Found {len(data_s3links)} data files.")
     coord_vars = loadable_coord_vars.split(",")
     reader_opts = {"storage_options": fs.storage_options}
 
