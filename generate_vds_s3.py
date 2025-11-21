@@ -35,6 +35,38 @@ def opends_withref(ref, fs_data):
     )
     return data
 
+def process_in_batches(data_s3links, coord_vars, fs, batch_size=1000):
+    """Process S3 links in batches, refreshing filesystem between batches."""
+
+    earthaccess.login()
+
+    virtual_ds_list = []
+    
+    for i in range(0, len(data_s3links), batch_size):
+        batch = data_s3links[i:i + batch_size]
+        
+        # Get HTTPS session for fsspec
+        fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+
+        reader_opts = {"storage_options": fs.storage_options}
+        open_vds_par = delayed(open_virtual_dataset)
+        
+        tasks = [
+            open_vds_par(
+                p, 
+                indexes={}, 
+                reader_options=reader_opts, 
+                loadable_variables=coord_vars, 
+                decode_times=False
+            ) 
+            for p in batch
+        ]
+        
+        batch_results = da.compute(tasks)[0]
+        virtual_ds_list.extend(batch_results)
+            
+    return virtual_ds_list
+
 def main(
     collection,
     loadable_coord_vars,
@@ -85,12 +117,15 @@ def main(
 
     logging.info("Generating references for all files...")
 
-    open_vds_par = delayed(open_virtual_dataset)
-    tasks = [
-        open_vds_par(p, indexes={}, reader_options=reader_opts, loadable_variables=coord_vars, decode_times=False) 
-        for p in data_s3links
-        ]
-    virtual_ds_list = da.compute(tasks)[0]
+    #open_vds_par = delayed(open_virtual_dataset)
+    #tasks = [
+    #    open_vds_par(p, indexes={}, reader_options=reader_opts, loadable_variables=coord_vars, decode_times=False) 
+    #    for p in data_s3links
+    #    ]
+    #virtual_ds_list = da.compute(tasks)[0]
+
+    # Usage
+    virtual_ds_list = process_in_batches(data_s3links, coord_vars, fs)
 
     # Combine references
     logging.info("Combining references...")
