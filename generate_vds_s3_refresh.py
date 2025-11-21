@@ -6,7 +6,6 @@ import argparse
 import logging
 import time
 import multiprocessing
-import threading
 
 import fsspec
 import earthaccess
@@ -16,10 +15,6 @@ from dask import delayed
 import dask.array as da
 from dask.distributed import Client
 
-fs = None
-fs_last_refresh = 0
-fs_lock = threading.Lock()
-FS_REFRESH_INTERVAL = 50 * 60  # 50 minutes in seconds
 
 def setup_logging(debug=False):
     log_format = "%(asctime)s %(levelname)s %(message)s"
@@ -41,28 +36,17 @@ def opends_withref(ref, fs_data):
     )
     return data
 
-def get_fs():
-    global fs, fs_last_refresh
-    now = time.time()
-    if fs is None or (now - fs_last_refresh) > FS_REFRESH_INTERVAL:
-        with fs_lock:
-            # Double-check after acquiring lock
-            if fs is None or (time.time() - fs_last_refresh) > FS_REFRESH_INTERVAL:
-                earthaccess.login()
-                fs = earthaccess.get_s3_filesystem(daac="PODAAC")
-                fs_last_refresh = time.time()
-    return fs
-
-# Usage in your Dask-delayed function:
 @delayed
-def open_vds_par(datalink, loadable_variables=None):
-    fs_obj = get_fs()
-    reader_options = {"storage_options": fs_obj.storage_options}
+def open_vds_par(datalink, loadable_variables):
+    import earthaccess
+    earthaccess.login()  # Cached - no API call after first time per worker
+    fs = earthaccess.get_s3_filesystem(daac="PODAAC")  # Cheap object creation
+    reader_opts = {"storage_options": fs.storage_options}
+    
     return open_virtual_dataset(
-        datalink, indexes={}, reader_options=reader_options,
+        datalink, indexes={}, reader_options=reader_opts,
         loadable_variables=loadable_variables, decode_times=False
     )
-
 
 def main(
     collection,
@@ -88,7 +72,6 @@ def main(
 
     # Get HTTPS session for fsspec
     fs = earthaccess.get_s3_filesystem(daac="PODAAC")
-    print(fs)
 
     # Search for granules
     if start_date or end_date:
@@ -106,7 +89,6 @@ def main(
 
     logging.info(f"Found {len(data_s3links)} data files.")
     coord_vars = loadable_coord_vars.split(",")
-    reader_opts = {"storage_options": fs.storage_options}
 
     # Parallel reference creation for all files
     logging.info(f"CPU count = {multiprocessing.cpu_count()}")
@@ -116,7 +98,7 @@ def main(
     logging.info("Generating references for all files...")
 
     tasks = [
-        open_vds_par(p, indexes={}, reader_options=reader_opts, loadable_variables=coord_vars, decode_times=False) 
+        open_vds_par(p, loadable_variables=coord_vars) 
         for p in data_s3links
         ]
     virtual_ds_list = da.compute(tasks)[0]
