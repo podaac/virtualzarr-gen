@@ -35,7 +35,7 @@ def opends_withref(ref, fs_data):
     )
     return data
 
-def process_in_batches(data_s3links, coord_vars, fs, batch_size=1000):
+def process_in_batches(data_s3links, coord_vars, batch_size=1000):
     """Process S3 links in batches, refreshing filesystem between batches."""
 
     earthaccess.login()
@@ -125,7 +125,7 @@ def main(
     #virtual_ds_list = da.compute(tasks)[0]
 
     # Usage
-    virtual_ds_list = process_in_batches(data_s3links, coord_vars, fs)
+    virtual_ds_list = process_in_batches(data_s3links, coord_vars)
 
     # Combine references
     logging.info("Combining references...")
