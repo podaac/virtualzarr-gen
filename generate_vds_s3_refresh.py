@@ -6,6 +6,7 @@ import argparse
 import logging
 import time
 import multiprocessing
+import threading
 
 import fsspec
 import earthaccess
