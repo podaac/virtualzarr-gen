@@ -95,7 +95,7 @@ def main(
     logging.info(f"CPU count = {multiprocessing.cpu_count()}")
     #client = Client(n_workers=multiprocessing.cpu_count(), threads_per_worker=1)
     client = Client(
-        n_workers=16, 
+        n_workers=12, 
         threads_per_worker=1,
         env={
             'EARTHDATA_USERNAME': os.environ.get('EARTHDATA_USERNAME'),
