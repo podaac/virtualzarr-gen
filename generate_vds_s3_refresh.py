@@ -89,11 +89,19 @@ def main(
 
     logging.info(f"Found {len(data_s3links)} data files.")
     coord_vars = loadable_coord_vars.split(",")
+    #reader_opts = {"storage_options": fs.storage_options}
 
     # Parallel reference creation for all files
     logging.info(f"CPU count = {multiprocessing.cpu_count()}")
     #client = Client(n_workers=multiprocessing.cpu_count(), threads_per_worker=1)
-    client = Client(n_workers=16, threads_per_worker=1)
+    client = Client(
+        n_workers=16, 
+        threads_per_worker=1,
+        env={
+            'EARTHDATA_USERNAME': os.environ.get('EARTHDATA_USERNAME'),
+            'EARTHDATA_PASSWORD': os.environ.get('EARTHDATA_PASSWORD')
+        }
+    )
 
     logging.info("Generating references for all files...")
 
