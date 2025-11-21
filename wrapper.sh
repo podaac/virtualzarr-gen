@@ -8,11 +8,9 @@
 export edl_username=$(aws ssm get-parameter --with-decryption --name $SSM_EDL_USERNAME | jq .Parameter.Value --raw-output)
 export edl_password=$(aws ssm get-parameter --with-decryption --name $SSM_EDL_PASSWORD | jq .Parameter.Value --raw-output)
 
-cat > ~/.netrc <<EOF
-machine urs.earthdata.nasa.gov
-  login $edl_username
-  password $edl_password
-EOF
+# Set Earthdata environment variables
+export EARTHDATA_USERNAME="$edl_username"
+export EARTHDATA_PASSWORD="$edl_password"
 
 cmd="python3 generate_vds_s3_refresh.py --collection $COLLECTION --loadable-coord-vars $LOADABLE_VARS"
 if [[ -n "$startDate" ]]; then
@@ -25,4 +23,4 @@ fi
 eval $cmd
 
 # Upload output files to S3
-aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_https.json" --include "output.ipynb" --exclude ".ipynb_checkpoints"
+aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_https.json" --include "output.ipynb" --exclude
