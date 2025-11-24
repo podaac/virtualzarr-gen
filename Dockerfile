@@ -1,17 +1,23 @@
-from python:3.12
-workdir /opt/cloud-optimized
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+FROM python:3.12
 
-RUN pip install numcodecs==0.15.1
-RUN apt-get update; apt-get install -y jq awscli
+WORKDIR /opt/cloud-optimized
 
-COPY generate_cloud_optimized_store_https.ipynb .
-COPY generate_vds_clean.py .
-COPY generate_vds_s3.py .
-COPY generate_vds_s3_refresh.py .
+# Install Poetry
+RUN pip install poetry
 
-COPY wrapper.sh .
+# Copy only dependency files first for better caching
+COPY pyproject.toml poetry.lock* ./
+
+# Install dependencies and your project
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y jq awscli
+
+# Copy the rest of your project files
+COPY . .
+
 RUN chmod 755 wrapper.sh
 
 ENTRYPOINT ["/opt/cloud-optimized/wrapper.sh"]

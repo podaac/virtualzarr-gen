@@ -35,7 +35,7 @@ def opends_withref(ref, fs_data):
     )
     return data
 
-def process_in_batches(data_s3links, coord_vars, batch_size=1000):
+def process_in_batches(data_s3links, coord_vars, batch_size=512):
     """Process S3 links in batches, refreshing filesystem between batches."""
 
     earthaccess.login()
@@ -112,19 +112,9 @@ def main(
 
     # Parallel reference creation for all files
     logging.info(f"CPU count = {multiprocessing.cpu_count()}")
-    #client = Client(n_workers=multiprocessing.cpu_count(), threads_per_worker=1)
     client = Client(n_workers=16, threads_per_worker=1, memory_limit='15GB')
 
     logging.info("Generating references for all files...")
-
-    #open_vds_par = delayed(open_virtual_dataset)
-    #tasks = [
-    #    open_vds_par(p, indexes={}, reader_options=reader_opts, loadable_variables=coord_vars, decode_times=False) 
-    #    for p in data_s3links
-    #    ]
-    #virtual_ds_list = da.compute(tasks)[0]
-
-    # Usage
     virtual_ds_list = process_in_batches(data_s3links, coord_vars)
 
     # Combine references
@@ -154,7 +144,7 @@ def main(
 
     client.close()
 
-if __name__ == "__main__":
+def cli():
     parser = argparse.ArgumentParser(description="Generate Cloud Optimized Store Reference Files")
     parser.add_argument("--collection", type=str, required=True, help="Earthdata collection short name")
     parser.add_argument("--loadable-coord-vars", type=str, default="latitude,longitude,time", help="Comma-separated list of loadable coordinate variables")
@@ -170,3 +160,6 @@ if __name__ == "__main__":
         args.end_date,
         args.debug
     )
+
+if __name__ == "__main__":
+    cli()

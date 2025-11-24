@@ -1,0 +1,4 @@
+bucket = "podaac-sit-services-cloud-optimizer"
+key    = "terraform/terraform.tfstate"
+region = "us-west-2"
+encrypt = true

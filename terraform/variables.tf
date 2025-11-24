@@ -31,13 +31,8 @@ variable "ami_id_ssm_name" {
     description = "Name of the SSM Parameter that contains the NGAP approved ECS AMI ID."
 }
 
-/*
-variable "container_image" {
-    type = string
-    default = "ghcr.io/podaac/swodlr-api"
+variable "image_name" {
+  description = "ECS container image name"
+  type        = string
+  default     = "ghcr.io/podaac/virtualzarr-gen:main"
 }
-
-variable "container_image_tag" {
-    type = string
-}
-*/

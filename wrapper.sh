@@ -12,7 +12,7 @@ export edl_password=$(aws ssm get-parameter --with-decryption --name $SSM_EDL_PA
 export EARTHDATA_USERNAME="$edl_username"
 export EARTHDATA_PASSWORD="$edl_password"
 
-cmd="python3 generate_vds_s3.py --collection $COLLECTION --loadable-coord-vars $LOADABLE_VARS"
+cmd="generate-vds-s3 --collection $COLLECTION --loadable-coord-vars $LOADABLE_VARS"
 if [[ -n "$startDate" ]]; then
   cmd="$cmd --start-date $startDate"
 fi

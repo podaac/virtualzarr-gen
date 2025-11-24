@@ -1,10 +1,5 @@
 terraform {
-  backend "s3" {
-    bucket               = "podaac-sit-services-cloud-optimizer"
-    key                  = "terraform/terraform.tfstate"
-    region               = "us-west-2"
-    encrypt              = true
-  }
+  backend "s3" {}
 }
 
 resource "aws_ecs_cluster" "default" {
@@ -48,7 +43,7 @@ resource "aws_ecs_task_definition" "app" {
   container_definitions = jsonencode([
         {
             "name": "cloud-optimization-generation",
-            "image": "ghcr.io/podaac/virtualzarr-gen:main",
+            "image": var.image_name,
             "cpu": 0,
             "memory": 249856,
             "memoryReservation": 245760,

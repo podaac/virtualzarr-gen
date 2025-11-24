@@ -1,0 +1,38 @@
+[tool.poetry]
+name = "virtualizarr-gen"
+version = "0.1.0"
+description = "A project using zarr, xarray, dask, virtualizarr, kerchunk, etc."
+authors = ["podaac-tva <podaac-tva@jpl.nasa.gov>"]
+readme = "README.md"
+
+packages = [
+    { include = "podaac" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+
+zarr = "2.18.4"
+fastparquet = "2024.5.0"
+xarray = "2025.1.2"
+fsspec = "2024.10.0"
+dask = {version = "2024.5.2", extras = ["complete"]}
+h5netcdf = "1.3.0"
+virtualizarr = "1.3.2"
+numcodecs = "0.15.1"
+kerchunk = "0.2.7"
+boto3 = "*"
+jupyter = "*"
+papermill = "*"
+earthaccess = "*"
+distributed = "2024.5.2"
+
+[tool.poetry.scripts]
+generate-vds-s3 = "podaac.generate_vds_s3:cli"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
