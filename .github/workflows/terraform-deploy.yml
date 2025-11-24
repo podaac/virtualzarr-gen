@@ -44,11 +44,9 @@ jobs:
         working-directory: terraform
 
       - name: Terraform Plan
-        if: github.ref == 'refs/heads/main'
         run: terraform plan -var-file=tfvars/sit.tfvars
         working-directory: terraform
 
       - name: Terraform Apply
-        if: github.ref == 'refs/heads/main'
         run: terraform apply -auto-approve -var-file=tfvars/sit.tfvars
         working-directory: terraform
