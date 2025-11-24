@@ -112,7 +112,7 @@ def main(
 
     # Parallel reference creation for all files
     logging.info(f"CPU count = {multiprocessing.cpu_count()}")
-    client = Client(n_workers=16, threads_per_worker=1, memory_limit='15GB')
+    client = Client(n_workers=16, threads_per_worker=1, memory_limit='12GB')
 
     logging.info("Generating references for all files...")
     virtual_ds_list = process_in_batches(data_s3links, coord_vars)
