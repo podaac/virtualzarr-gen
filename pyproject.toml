@@ -3,7 +3,6 @@ name = "virtualizarr-gen"
 version = "0.1.0"
 description = "A project using zarr, xarray, dask, virtualizarr, kerchunk, etc."
 authors = ["podaac-tva <podaac-tva@jpl.nasa.gov>"]
-readme = "README.md"
 
 packages = [
     { include = "podaac" },
