@@ -1,0 +1,52 @@
+name: Terraform Deploy
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    name: 'Terraform Apply'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.8.5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_SERVICES_SIT }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_SERVICES_SIT }}
+          aws-region: us-west-2
+
+      - name: Terraform Init
+        run: terraform init -backend-config=tfvars/sit.backend
+        working-directory: terraform
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: terraform
+
+      - name: Terraform Plan
+        if: github.ref == 'refs/heads/main'
+        run: terraform plan -var-file=tfvars/sit.tfvars
+        working-directory: terraform
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main'
+        run: terraform apply -auto-approve -var-file=tfvars/sit.tfvars
+        working-directory: terraform
