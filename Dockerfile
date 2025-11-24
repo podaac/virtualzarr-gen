@@ -7,16 +7,14 @@ RUN pip install poetry
 
 # Copy only dependency files first for better caching
 COPY pyproject.toml poetry.lock* ./
+COPY podaac ./podaac
+COPY wrapper.sh ./
 
 # Install dependencies and your project
-RUN poetry config virtualenvs.create false \
-    && poetry install --no-interaction --no-ansi
+RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y jq awscli
-
-# Copy the rest of your project files
-COPY . .
 
 RUN chmod 755 wrapper.sh
 
