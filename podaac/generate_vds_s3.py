@@ -15,6 +15,16 @@ from dask import delayed
 import dask.array as da
 from dask.distributed import Client
 
+import sys
+#from pympler import asizeof
+
+import psutil
+
+def print_memory_usage(note=""):
+    process = psutil.Process(os.getpid())
+    mem_mb = process.memory_info().rss / 1024 / 1024
+    logging.info(f"[MEMORY] {note} RSS: {mem_mb:.2f} MB")
+
 def setup_logging(debug=False):
     log_format = "%(asctime)s %(levelname)s %(message)s"
     if debug:
@@ -62,7 +72,7 @@ def process_in_batches(data_s3links, coord_vars, batch_size=512):
             for p in batch
         ]
         
-        batch_results = da.compute(tasks)[0]
+        batch_results = list(da.compute(*tasks)) 
         virtual_ds_list.extend(batch_results)
             
     return virtual_ds_list
@@ -103,16 +113,25 @@ def main(
         granule_info = earthaccess.search_data(short_name=collection)
 
     # Get S3 links
+    print_memory_usage("Before getting links")
+
     logging.info(f"Found {len(granule_info)} granules.")
     data_s3links = [g.data_links(access="direct")[0] for g in granule_info]
+
+    print_memory_usage("After getting links")
+
+    #logging.info(f"granule_info deep size: {asizeof.asizeof(granule_info)/1024/1024:.2f} MB")
+    #logging.info(f"granule_info data links: {asizeof.asizeof(data_s3links)/1024/1024:.2f} MB")
 
     logging.info(f"Found {len(data_s3links)} data files.")
     coord_vars = loadable_coord_vars.split(",")
     reader_opts = {"storage_options": fs.storage_options}
 
+    print_memory_usage("Before processing batches")
     # Parallel reference creation for all files
     logging.info(f"CPU count = {multiprocessing.cpu_count()}")
-    client = Client(n_workers=16, threads_per_worker=1, memory_limit='12GB')
+    client = Client(n_workers=12, threads_per_worker=1, memory_limit='12GB')
+    print_memory_usage("Afeter starting Dask client")
 
     logging.info("Generating references for all files...")
     virtual_ds_list = process_in_batches(data_s3links, coord_vars)
