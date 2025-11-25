@@ -45,10 +45,11 @@ def opends_withref(ref, fs_data):
     )
     return data
 
-def process_in_batches(data_s3links, coord_vars, batch_size=512):
+def process_in_batches(data_s3links, coord_vars, batch_size=36):
     """Process S3 links in batches, refreshing filesystem between batches."""
 
     earthaccess.login()
+    open_vds_par = delayed(open_virtual_dataset)
 
     virtual_ds_list = []
     
@@ -59,7 +60,6 @@ def process_in_batches(data_s3links, coord_vars, batch_size=512):
         fs = earthaccess.get_s3_filesystem(daac="PODAAC")
 
         reader_opts = {"storage_options": fs.storage_options}
-        open_vds_par = delayed(open_virtual_dataset)
         
         tasks = [
             open_vds_par(
@@ -72,7 +72,9 @@ def process_in_batches(data_s3links, coord_vars, batch_size=512):
             for p in batch
         ]
         
-        batch_results = list(da.compute(*tasks)) 
+        batch_results = list(da.compute(*tasks))
+        print_memory_usage("Inside tasks")
+
         virtual_ds_list.extend(batch_results)
             
     return virtual_ds_list
