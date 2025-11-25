@@ -6,6 +6,7 @@ import argparse
 import logging
 import time
 import multiprocessing
+import psutil
 
 import fsspec
 import earthaccess
@@ -15,8 +16,6 @@ from dask import delayed
 import dask.array as da
 from dask.distributed import Client
 
-import sys
-import psutil
 
 def print_memory_usage(note=""):
     process = psutil.Process(os.getpid())

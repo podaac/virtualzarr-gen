@@ -45,8 +45,8 @@ resource "aws_ecs_task_definition" "app" {
             "name": "cloud-optimization-generation",
             "image": var.image_name,
             "cpu": 0,
-            "memory": 249856,
-            "memoryReservation": 245760,
+            "memory": 209715, 
+            "memoryReservation": 199229,
             "portMappings": [
                 {
                     "name": "workers",
