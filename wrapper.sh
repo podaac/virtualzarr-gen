@@ -20,6 +20,9 @@ if [[ -n "$endDate" ]]; then
   cmd="$cmd --end-date $endDate"
 fi
 
+# Sleep for 3 minutes before running the command let ec2 startup if from cold start
+sleep 180
+
 eval $cmd
 
 # Upload output files to S3
