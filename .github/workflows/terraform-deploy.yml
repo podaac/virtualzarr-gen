@@ -2,51 +2,176 @@ name: Terraform Deploy
 
 on:
   push:
-    branches:
-      - main
+    branches: 
       - develop
-  pull_request:
-    branches:
       - main
-      - develop
+      - 'release/**'
+      - 'feature/**'
+      - 'issue/**'
+      - 'issues/**'
+      - 'dependabot/**'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PYTHON_VERSION: '3.12'
+  POETRY_VERSION: '1.8.5'
+  TERRAFORM_VERSION: '1.5.3'
 
 jobs:
   terraform:
     name: 'Terraform Apply'
     runs-on: ubuntu-latest
-    environment: production
+
     permissions:
       id-token: write
       contents: read
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Terraform
         uses: hashicorp/setup-terraform@v3
         with:
-          terraform_version: 1.8.5
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Setup Poetry
+        uses: abatilo/actions-poetry@v4
+        with:
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: Version Management
+        id: versioning
+        run: |
+          current_version=$(poetry version -s)
+          base_version=$(echo "$current_version" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+          pyproject_name=$(poetry version | awk '{print $1}')
+
+          # Version calculation based on branch
+          if [[ "${{ github.ref }}" =~ ^refs/heads/(issue|feature|dependabot)/ ]]; then
+            TIMESTAMP=$(date -u +"%Y%m%d%H%M")
+            new_version="${base_version}a${TIMESTAMP}"
+            echo "TARGET_ENV_UPPERCASE=SIT" >> $GITHUB_ENV
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "TARGET_ENV_UPPERCASE=SIT" >> $GITHUB_ENV
+            new_version=$(poetry version prerelease -s)
+          elif [[ "${{ github.ref }}" =~ ^refs/heads/release/ ]]; then
+            echo "TARGET_ENV_UPPERCASE=UAT" >> $GITHUB_ENV
+            if [[ ${current_version} =~ rc ]]; then
+              new_version=$(poetry version prerelease -s)
+            else
+              new_version="${GITHUB_REF#refs/heads/release/}rc1"
+            fi
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "TARGET_ENV_UPPERCASE=OPS" >> $GITHUB_ENV
+            new_version=${base_version}
+          fi
+
+      - name: Run Poetry
+        run: |
+          poetry install
+          poetry run pylint podaac
+          poetry run flake8 podaac
+
+      - name: Run Snyk as a blocking step
+        uses: snyk/actions/python@master
+        env:
+            SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: test
+          args: >
+              --org=${{ secrets.SNYK_ORG_ID }}
+              --project-name=${{ github.repository }}
+              --severity-threshold=high
+              --fail-on=all
+
+      - name: Run Snyk on Python
+        uses: snyk/actions/python@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          command: monitor
+          args: >
+            --org=${{ secrets.SNYK_ORG_ID }}
+            --project-name=${{ github.repository }}
+
+      - name: Quick check for changes
+        id: check_changes
+        if: |
+          github.ref == 'refs/heads/develop' ||
+          github.ref == 'refs/heads/main'    ||
+          startsWith(github.ref, 'refs/heads/release')
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "changes=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Commit Version Bump
+        # If building develop, a release branch, or main then we commit the version bump back to the repo
+        if: steps.check_changes.outputs.changes == 'true'
+        run: |
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git commit -am "/version ${{ env.new_version }}"
+          git push
+
+      - name: Push Tag
+        env:
+          VERSION: ${{ env.new_version }}
+        if: |
+          github.ref == 'refs/heads/develop' ||
+          github.ref == 'refs/heads/main'    ||
+          startsWith(github.ref, 'refs/heads/release')
+        run: |
+          git config user.name "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+          git tag -a "${VERSION}" -m "Version ${VERSION}"
+          git push origin "${VERSION}"
+
+      - name: Deploy Env Override
+        if: |
+          github.event.head_commit.message == '/deploy sit' ||
+          github.event.head_commit.message == '/deploy uat'
+        run: |
+          message="${{ github.event.head_commit.message }}"
+          trimmed_message=${message:1}  # Remove leading slash
+          override_env=$(echo "$trimmed_message" | grep -oE '[^[:space:]]+$')
+          override_env_upper=$(echo "$trimmed_message" | awk '{print toupper($NF)}')
+          echo "THE_ENV=${override_env}" >> $GITHUB_ENV
+          echo "TARGET_ENV_UPPERCASE=${override_env_upper}" >> $GITHUB_ENV
+
+      - name: Lower Case Target Env
+        run: |
+          original_env_value="${TARGET_ENV_UPPERCASE}"
+          lowercase_value=$(echo "${original_env_value}" | tr '[:upper:]' '[:lower:]')
+          echo "TARGET_ENV_LOWERCASE=${lowercase_value}" >> $GITHUB_ENV
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_SERVICES_SIT }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_SERVICES_SIT }}
+          aws-access-key-id: ${{ secrets[format('AWS_ACCESS_KEY_ID_SERVICES_{0}', env.TARGET_ENV_UPPERCASE)] }}
+          aws-secret-access-key: ${{ secrets[format('AWS_SECRET_ACCESS_KEY_SERVICES_{0}', env.TARGET_ENV_UPPERCASE)] }}
           aws-region: us-west-2
 
-      - name: Terraform Init
-        run: terraform init -backend-config=tfvars/sit.backend
+      - name: Terraform Deploy
+        if: |
+          github.event.head_commit.message == '/deploy sit' ||
+          github.event.head_commit.message == '/deploy uat' ||
+          github.ref == 'refs/heads/develop' ||
+          github.ref == 'refs/heads/main'    ||
+          startsWith(github.ref, 'refs/heads/release')
         working-directory: terraform
-
-      - name: Terraform Validate
-        run: terraform validate
-        working-directory: terraform
-
-      - name: Terraform Plan
-        run: terraform plan -var-file=tfvars/sit.tfvars
-        working-directory: terraform
-
-      - name: Terraform Apply
-        run: terraform apply -auto-approve -var-file=tfvars/sit.tfvars
-        working-directory: terraform
+        run: |
+          terraform init -backend-config=tfvars/${{ env.TARGET_ENV_LOWERCASE }}.backend
+          terraform validate
+          terraform plan -var-file=tfvars/${{ env.TARGET_ENV_LOWERCASE }}.tfvars
+          terraform apply -auto-approve -var-file=tfvars/${{ env.TARGET_ENV_LOWERCASE }}.tfvars

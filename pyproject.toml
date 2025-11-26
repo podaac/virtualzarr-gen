@@ -31,6 +31,8 @@ generate-vds-s3 = "podaac.generate_vds_s3:cli"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"
+flake8 = "^7.0.0"
+pylint = "^4.0.3"
 
 [build-system]
 requires = ["poetry-core"]
