@@ -75,6 +75,10 @@ jobs:
             new_version=${base_version}
           fi
 
+          echo "new_version=${new_version}" >> $GITHUB_ENV
+          echo "pyproject_name=${pyproject_name}" >> $GITHUB_ENV
+          poetry version ${new_version}
+
       - name: Run Poetry
         run: |
           poetry install
