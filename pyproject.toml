@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "virtualizarr-gen"
-version = "0.1.1a0"
+version = "0.1.1a1"
 description = "A project using zarr, xarray, dask, virtualizarr, kerchunk, etc."
 authors = ["podaac-tva <podaac-tva@jpl.nasa.gov>"]
 
