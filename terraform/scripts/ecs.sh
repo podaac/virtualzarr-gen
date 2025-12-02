@@ -1,8 +1,11 @@
 #!/bin/bash
 echo "ECS_CLUSTER=${ecs_cluster}" >> /etc/ecs/ecs.config
 
-# Start ECS agent in a paused state or delay it
+# Stop the agent if it auto-started
 systemctl stop ecs
 
-# Or delay the start
-sleep 300 && systemctl start ecs
+# Wait 5 minutes (300 seconds) before starting
+sleep 180
+
+# Now start the ECS agent
+systemctl start ecs
