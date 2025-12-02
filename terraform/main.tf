@@ -271,7 +271,7 @@ resource "aws_ecs_capacity_provider" "app_cap_provider" {
       maximum_scaling_step_size = 1
       minimum_scaling_step_size = 1
       status                    = "ENABLED"
-      instance_warmup_period    = 480
+      instance_warmup_period    = 300
       target_capacity           = 100
     }
   }
@@ -285,7 +285,7 @@ resource "aws_ecs_cluster_capacity_providers" "my_cluster_capacity_providers" {
     aws_ecs_capacity_provider.app_cap_provider.name,
   ]
   default_capacity_provider_strategy {
-    base = 0
+    base = 1
     weight = 100
     capacity_provider = aws_ecs_capacity_provider.app_cap_provider.name
   }
