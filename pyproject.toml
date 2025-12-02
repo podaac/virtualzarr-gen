@@ -21,8 +21,6 @@ virtualizarr = "1.3.2"
 numcodecs = "0.15.1"
 kerchunk = "0.2.7"
 boto3 = "*"
-jupyter = "*"
-papermill = "*"
 earthaccess = "*"
 distributed = "2024.5.2"
 

@@ -285,7 +285,7 @@ resource "aws_ecs_cluster_capacity_providers" "my_cluster_capacity_providers" {
     aws_ecs_capacity_provider.app_cap_provider.name,
   ]
   default_capacity_provider_strategy {
-    base = 1
+    base = 0
     weight = 100
     capacity_provider = aws_ecs_capacity_provider.app_cap_provider.name
   }
