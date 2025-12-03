@@ -1,10 +1,10 @@
 #!/bin/bash
 echo "ECS_CLUSTER=${ecs_cluster}" > /etc/ecs/ecs.config
 
-systemctl stop ecs
+sudo systemctl stop ecs
 
 # Wait 2 minutes
-sleep 180
+sleep 120
 
 # Start ECS agent
-systemctl start ecs
+sudo systemctl start ecs
