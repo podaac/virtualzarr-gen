@@ -170,8 +170,8 @@ resource "aws_iam_role" "app_task_exec" {
             {
             "Sid":"ReadWriteS3",
             "Action": [
-                    "s3:ListBucket"
-                        ],
+              "s3:ListBucket"
+              ],
             "Effect": "Allow",
             "Resource": ["arn:aws:s3:::${var.output_bucket}"]
             },
@@ -189,6 +189,13 @@ resource "aws_iam_role" "app_task_exec" {
                 "s3:PutObjectACL"
             ],
             "Resource": ["arn:aws:s3:::${var.output_bucket}/*"]
+            },
+            {
+              Effect = "Allow",
+              Action = [
+                "ecs:RegisterContainerInstance"
+              ],
+              Resource = "*"
             }
         ]
     })
@@ -237,7 +244,6 @@ resource "aws_iam_instance_profile" "ec2profile" {
   role = aws_iam_role.app_task_exec.name
 }
 
-
 /* Autoscaling group with instance-types */
 resource "aws_autoscaling_group" "app-ag" {
   name = "${local.resource_prefix}-app-asg"
@@ -276,7 +282,6 @@ resource "aws_ecs_capacity_provider" "app_cap_provider" {
       target_capacity           = 100
     }
   }
-
 }
 
 resource "aws_ecs_cluster_capacity_providers" "my_cluster_capacity_providers" {
@@ -285,9 +290,11 @@ resource "aws_ecs_cluster_capacity_providers" "my_cluster_capacity_providers" {
   capacity_providers = [
     aws_ecs_capacity_provider.app_cap_provider.name,
   ]
+
   default_capacity_provider_strategy {
     base = 1
     weight = 100
     capacity_provider = aws_ecs_capacity_provider.app_cap_provider.name
   }
+
 }
