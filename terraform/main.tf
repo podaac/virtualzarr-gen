@@ -191,7 +191,7 @@ resource "aws_iam_role" "app_task_exec" {
 resource "aws_launch_template" "app-lt" {
   name = "${local.resource_prefix}-lt"
   iam_instance_profile {
-    name = aws_iam_instance_profile.ecs_instance_profile.name
+    name = aws_iam_instance_profile.ec2profile.name
   }
   image_id                  = data.aws_ssm_parameter.ecs_amis.value
   vpc_security_group_ids    = [data.aws_security_groups.vpc_default_sg.ids[0]]
@@ -256,28 +256,4 @@ resource "aws_ecs_cluster_capacity_providers" "my_cluster_capacity_providers" {
     capacity_provider = aws_ecs_capacity_provider.app_cap_provider.name
   }
 
-}
-
-
-resource "aws_iam_role" "ecs_instance_role" {
-  name = "${local.resource_prefix}-ecs-instance-role"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17",
-    Statement = [{
-      Effect    = "Allow",
-      Principal = { Service = "ec2.amazonaws.com" },
-      Action    = "sts:AssumeRole"
-    }]
-  })
-}
-
-resource "aws_iam_role_policy_attachment" "ecs_instance_role_attach" {
-  role       = aws_iam_role.ecs_instance_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role"
-}
-
-resource "aws_iam_instance_profile" "ecs_instance_profile" {
-  name = "${local.resource_prefix}-ecs-instance-profile"
-  role = aws_iam_role.ecs_instance_role.name
 }
