@@ -10,4 +10,4 @@ sleep 180
 echo "ECS_CLUSTER=${ecs_cluster}" > /etc/ecs/ecs.config
 
 # 4. Restart ECS agent cleanly
-systemctl restart ecs
+sudo systemctl restart ecs
