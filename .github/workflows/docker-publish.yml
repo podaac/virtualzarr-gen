@@ -6,21 +6,22 @@ name: Docker
 # documentation.
 
 on:
-  # schedule:
-  #   - cron: '36 10 * * *'
   push:
-    branches: [ "main", "develop" ]
-    # Publish semver tags as releases.
-    tags: [ 'v*.*.*' ]
-  pull_request:
-    branches: [ "main", "develop" ]
+    branches: 
+      - develop
+      - main
+      - 'release/**'
+      - 'feature/**'
+      - 'issue/**'
+      - 'issues/**'
+      - 'dependabot/**'
 
 env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
-
+  POETRY_VERSION: '2.1.3'
 
 jobs:
   build:
@@ -36,6 +37,42 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Poetry
+        uses: abatilo/actions-poetry@v4
+        with:
+          poetry-version: ${{ env.POETRY_VERSION }}
+
+      - name: Version Management
+        id: versioning
+        run: |
+          current_version=$(poetry version -s)
+          base_version=$(echo "$current_version" | grep -oE '^[0-9]+\.[0-9]+\.[0-9]+')
+          pyproject_name=$(poetry version | awk '{print $1}')
+
+          # Version calculation based on branch
+          if [[ "${{ github.ref }}" =~ ^refs/heads/(issue|feature|dependabot)/ ]]; then
+            TIMESTAMP=$(date -u +"%Y%m%d%H%M")
+            new_version="${base_version}a${TIMESTAMP}"
+            echo "TARGET_ENV_UPPERCASE=SIT" >> $GITHUB_ENV
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "TARGET_ENV_UPPERCASE=SIT" >> $GITHUB_ENV
+            new_version=$(poetry version prerelease -s)
+          elif [[ "${{ github.ref }}" =~ ^refs/heads/release/ ]]; then
+            echo "TARGET_ENV_UPPERCASE=UAT" >> $GITHUB_ENV
+            if [[ ${current_version} =~ rc ]]; then
+              new_version=$(poetry version prerelease -s)
+            else
+              new_version="${GITHUB_REF#refs/heads/release/}rc1"
+            fi
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "TARGET_ENV_UPPERCASE=OPS" >> $GITHUB_ENV
+            new_version=${base_version}
+          fi
+
+          echo "new_version=${new_version}" >> $GITHUB_ENV
+          echo "pyproject_name=${pyproject_name}" >> $GITHUB_ENV
+          poetry version ${new_version}
 
       # Install the cosign tool except on PR
       # https://github.com/sigstore/cosign-installer
@@ -81,6 +118,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ env.TAG }}
+            type=raw,value=${{ env.new_version }}
 
       # Build and push Docker image with Buildx (don't push on PR)
       # https://github.com/docker/build-push-action
