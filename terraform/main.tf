@@ -63,7 +63,10 @@ resource "aws_ecs_task_definition" "app" {
         { "name": "OUTPUT_BUCKET", "value": "" },
         { "name": "START_DATE", "value": "" },
         { "name": "SSM_EDL_USERNAME", "value": "" },
-        { "name": "SSM_EDL_PASSWORD", "value": "" }
+        { "name": "SSM_EDL_PASSWORD", "value": "" },
+        { "name": "CPU_COUNT", "value": "16" },
+        { "name": "MEMORY_LIMIT", "value": "12GB" },
+        { "name": "BATCH_SIZE", "value": "48" }
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

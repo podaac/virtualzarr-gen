@@ -137,7 +137,10 @@ def main(
     loadable_coord_vars,
     start_date,
     end_date,
-    debug=False
+    debug=False,
+    cpu_count=16,
+    memory_limit="12GB",
+    batch_size=48
 ):
     """
     Main function to generate cloud-optimized store reference files.
@@ -158,6 +161,10 @@ def main(
         end_date (str, optional): End date for temporal filtering
             (e.g., "1-1-2025"). If None, searches to present.
         debug (bool): Enable debug logging. Default is False.
+        cpu_count (int): Number of Dask workers. Default is 16.
+        memory_limit (str): Memory limit per Dask worker (e.g., "12GB").
+            Default is "12GB".
+        batch_size (int): Number of files to process in each batch. Default is 48.
 
     Raises:
         SystemExit: Exits with code 1 if the combined dataset has no attributes.
@@ -199,10 +206,10 @@ def main(
 
     # Parallel reference creation for all files
     logging.info("CPU count = %d", multiprocessing.cpu_count())
-    client = Client(n_workers=16, threads_per_worker=1, memory_limit='12GB')
+    client = Client(n_workers=cpu_count, threads_per_worker=1, memory_limit=memory_limit)
 
     logging.info("Generating references for all files...")
-    virtual_ds_list = process_in_batches(data_s3links, coord_vars)
+    virtual_ds_list = process_in_batches(data_s3links, coord_vars, batch_size=batch_size)
 
     # Combine references
     logging.info("Combining references...")
@@ -253,6 +260,12 @@ def cli():
                         help="End date (e.g., 1-1-2025)")
     parser.add_argument("--debug", action="store_true",
                         default=True, help="Enable debug logging")
+    parser.add_argument("--cpu-count", type=int, default=16,
+                        help="Number of Dask workers (default: 16)")
+    parser.add_argument("--memory-limit", type=str, default="12GB",
+                        help="Memory limit per Dask worker (default: 12GB)")
+    parser.add_argument("--batch-size", type=int, default=48,
+                        help="Batch size for processing S3 links (default: 48)")
     args = parser.parse_args()
 
     main(
@@ -260,7 +273,10 @@ def cli():
         args.loadable_coord_vars,
         args.start_date,
         args.end_date,
-        args.debug
+        args.debug,
+        args.cpu_count,
+        args.memory_limit,
+        args.batch_size
     )
 
 

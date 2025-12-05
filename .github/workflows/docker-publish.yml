@@ -12,9 +12,6 @@ on:
       - main
       - 'release/**'
       - 'feature/**'
-      - 'issue/**'
-      - 'issues/**'
-      - 'dependabot/**'
 
 env:
   # Use docker.io for Docker Hub if empty
@@ -54,7 +51,7 @@ jobs:
           if [[ "${{ github.ref }}" =~ ^refs/heads/(issue|feature|dependabot)/ ]]; then
             TIMESTAMP=$(date -u +"%Y%m%d%H%M")
             new_version="${base_version}a${TIMESTAMP}"
-            echo "TARGET_ENV_UPPERCASE=SIT" >> $GITHUB_ENV
+            echo "TARGET_ENV_UPPERCASE=DEVELOPMENT" >> $GITHUB_ENV
           elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
             echo "TARGET_ENV_UPPERCASE=SIT" >> $GITHUB_ENV
             new_version=$(poetry version prerelease -s)
@@ -73,6 +70,12 @@ jobs:
           echo "new_version=${new_version}" >> $GITHUB_ENV
           echo "pyproject_name=${pyproject_name}" >> $GITHUB_ENV
           poetry version ${new_version}
+
+      - name: Lower Case Target Env
+        run: |
+          original_env_value="${TARGET_ENV_UPPERCASE}"
+          lowercase_value=$(echo "${original_env_value}" | tr '[:upper:]' '[:lower:]')
+          echo "TARGET_ENV_LOWERCASE=${lowercase_value}" >> $GITHUB_ENV
 
       # Install the cosign tool except on PR
       # https://github.com/sigstore/cosign-installer
@@ -98,17 +101,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set environment tag
-        id: envtag
-        run: |
-          if [[ "${GITHUB_REF##*/}" == "main" ]]; then
-            echo "TAG=ops" >> $GITHUB_ENV
-          elif [[ "${GITHUB_REF##*/}" == "develop" ]]; then
-            echo "TAG=sit" >> $GITHUB_ENV
-          else
-            echo "TAG=${GITHUB_REF##*/}" >> $GITHUB_ENV
-          fi
-
       # Extract metadata (tags, labels) for Docker
       # https://github.com/docker/metadata-action
       - name: Extract Docker metadata
@@ -117,7 +109,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ env.TAG }}
+            type=raw,value=${{ env.TARGET_ENV_LOWERCASE }}
             type=raw,value=${{ env.new_version }}
 
       # Build and push Docker image with Buildx (don't push on PR)
