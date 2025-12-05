@@ -174,6 +174,9 @@ def main(
     logging.info("Vars: %s", loadable_coord_vars)
     logging.info("start_date: %s", start_date)
     logging.info("end_date: %s", end_date)
+    logging.info("cpu_count: %s", cpu_count)
+    logging.info("memory_limit: %s", memory_limit)
+    logging.info("batch_size: %s", batch_size)
 
     xr.set_options(
         display_expand_attrs=False,

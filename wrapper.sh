@@ -23,7 +23,15 @@ if [[ -n "$endDate" ]]; then
   cmd="$cmd --end-date $endDate"
 fi
 
+# Run the main CLI command
 eval $cmd
 
+# Replace s3:// with https://archive.podaac.earthdata.nasa.gov/ in any *_virtual_s3.json file and create *_virtual_https.json
+for s3_file in *_virtual_s3.json; do
+  https_file="${s3_file/_virtual_s3.json/_virtual_https.json}"
+  sed 's#s3://#https://archive.podaac.earthdata.nasa.gov/#g' "$s3_file" > "$https_file"
+done
+
 # Upload output files to S3
-aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_s3.json" --include "output.ipynb" --exclude ".ipynb_checkpoints"
+aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_https.json"
+aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_s3.json"
