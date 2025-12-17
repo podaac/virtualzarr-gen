@@ -26,7 +26,7 @@ fi
 # Run the main CLI command
 #eval $cmd
 
-papermill vds_basic_L2_dummytime_prod.ipynb output.ipynb --log-output
+papermill vds_basic_L2_dummytime_prod.ipynb output.ipynb --log-output -p shortname $COLLECTION
 
 ls -al
 
