@@ -15,28 +15,32 @@ export edl_password=$(aws ssm get-parameter --with-decryption --name $SSM_EDL_PA
 export EARTHDATA_USERNAME="$edl_username"
 export EARTHDATA_PASSWORD="$edl_password"
 
-cmd="generate-vds-s3 --collection $COLLECTION --loadable-coord-vars $LOADABLE_VARS --cpu-count $cpuCount --memory-limit $memoryLimit --batch-size $batchSize"
-if [[ -n "$startDate" ]]; then
-  cmd="$cmd --start-date $startDate"
-fi
-if [[ -n "$endDate" ]]; then
-  cmd="$cmd --end-date $endDate"
+if [[ "$COLLECTION" == *"L2"* ]]; then
+  # Use papermill for L2 collections
+  cmd="papermill vds_basic_L2_dummytime_prod.ipynb output.ipynb --log-output -p shortname $COLLECTION"
+else
+  # Use generate-vds-s3 for other collections
+  cmd="generate-vds-s3 --collection $COLLECTION --loadable-coord-vars $LOADABLE_VARS --cpu-count $cpuCount --memory-limit $memoryLimit --batch-size $batchSize"
+  if [[ -n "$startDate" ]]; then
+    cmd="$cmd --start-date $startDate"
+  fi
+  if [[ -n "$endDate" ]]; then
+    cmd="$cmd --end-date $endDate"
+  fi
 fi
 
 # Run the main CLI command
-#eval $cmd
-
-papermill vds_basic_L2_dummytime_prod.ipynb output.ipynb --log-output -p shortname $COLLECTION
+eval $cmd
 
 ls -al
 
-# Replace s3:// with https://archive.podaac.earthdata.nasa.gov/ in any *_virtual_s3.json file and create *_virtual_https.json
-for s3_file in *_virtual_s3.json; do
-  https_file="${s3_file/_virtual_s3.json/_virtual_https.json}"
+# Replace s3:// with https://archive.podaac.earthdata.nasa.gov/ in any *virtual*.json file and create *_virtual_https.json
+for s3_file in *virtual*.json; do
+  https_file="${s3_file%.json}_https.json"
   sed 's#s3://#https://archive.podaac.earthdata.nasa.gov/#g' "$s3_file" > "$https_file"
 done
 
+ls -al
+
 # Upload output files to S3
 aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual*.json"
-#aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_https.json"
-#aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_s3.json"
