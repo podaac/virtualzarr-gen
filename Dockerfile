@@ -10,6 +10,8 @@ COPY pyproject.toml poetry.lock* ./
 COPY podaac ./podaac
 COPY wrapper.sh ./
 
+COPY vds_basic_L2_dummytime_prod.ipynb ./
+
 # Install dependencies and your project
 RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi
 
