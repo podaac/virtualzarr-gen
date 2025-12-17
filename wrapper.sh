@@ -26,7 +26,7 @@ fi
 # Run the main CLI command
 #eval $cmd
 
-papermill vds_basic_L2_dummytime_prod.ipynb output.ipynb --log-output -p collection $COLLECTION -p loadable_coord_vars $LOADABLE_VARS -p start_date $startDate -p end_date $endDate -p bucket $OUTPUT_BUCKET
+papermill vds_basic_L2_dummytime_prod.ipynb output.ipynb --log-output
 
 ls -al
 
