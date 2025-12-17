@@ -24,7 +24,11 @@ if [[ -n "$endDate" ]]; then
 fi
 
 # Run the main CLI command
-eval $cmd
+#eval $cmd
+
+papermill vds_basic_L2_dummytime_prod.ipynb output.ipynb --log-output -p collection $COLLECTION -p loadable_coord_vars $LOADABLE_VARS -p start_date $startDate -p end_date $endDate -p bucket $OUTPUT_BUCKET
+
+ls -al
 
 # Replace s3:// with https://archive.podaac.earthdata.nasa.gov/ in any *_virtual_s3.json file and create *_virtual_https.json
 for s3_file in *_virtual_s3.json; do
@@ -33,5 +37,6 @@ for s3_file in *_virtual_s3.json; do
 done
 
 # Upload output files to S3
-aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_https.json"
-aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_s3.json"
+aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual*.json"
+#aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_https.json"
+#aws s3 sync . s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/ --exclude "*" --include "*virtual_s3.json"
