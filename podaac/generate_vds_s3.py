@@ -191,7 +191,11 @@ def main(
     fs = earthaccess.get_s3_filesystem(daac="PODAAC")
 
     # Search for granules
-    if start_date or end_date:
+    def is_valid_date(val):
+        return val not in (None, "None", "")
+
+    if is_valid_date(start_date) or is_valid_date(end_date):
+        logging.info("Searching granules with temporal filter - start_date: %s, end_date: %s", start_date, end_date)
         granule_info = earthaccess.search_data(
             short_name=collection,
             temporal=(start_date, end_date)
