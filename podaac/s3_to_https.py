@@ -5,10 +5,11 @@ Converts s3://podaac-ops-cumulus-protected/ to https://archive.podaac.earthdata.
 """
 
 import json
-import sys
 import logging
 import argparse
 
+
+# pylint: disable=function-redefined,R0801
 def setup_logging(debug=False):
     """
     Configure logging for the application.
@@ -133,8 +134,8 @@ def convert_kerchunk_file(input_file, output_file=None):
     with open(output_path, 'w') as f:
         json.dump(data, f, indent=2)
 
-    logging.info(f"Converted {input_file} -> {output_path}")
-    logging.info(f"Translated S3 URLs to HTTPS URLs")
+    logging.info("Converted %s -> %s", input_file, output_path)
+    logging.info("Translated S3 URLs to HTTPS URLs")
 
 
 def cli():
@@ -154,8 +155,8 @@ def cli():
     if input_arg.startswith('s3://'):
         # Single URL translation
         https_url = translate_s3_to_https(input_arg)
-        logging.info(f"S3:    {input_arg}")
-        logging.info(f"HTTPS: {https_url}")
+        logging.info("S3:    %s", input_arg)
+        logging.info("HTTPS: %s", https_url)
     else:
         # File conversion
         convert_kerchunk_file(input_arg, output_file)
