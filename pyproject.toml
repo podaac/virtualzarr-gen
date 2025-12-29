@@ -29,6 +29,7 @@ ipykernel = "*"
 
 [tool.poetry.scripts]
 generate-vds-s3 = "podaac.generate_vds_s3:cli"
+translate-s3-https = "podaac.s3_to_https:cli"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "*"

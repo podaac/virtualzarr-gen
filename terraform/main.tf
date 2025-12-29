@@ -45,8 +45,8 @@ resource "aws_ecs_task_definition" "app" {
       "name": "cloud-optimization-generation",
       "image": var.image_name,
       "cpu": 0,
-      "memory": 209715,
-      "memoryReservation": 199229,
+      "memory": 629145,
+      "memoryReservation": 597687,
       "portMappings": [
         {
           "name": "workers",
@@ -198,7 +198,9 @@ resource "aws_launch_template" "app-lt" {
   }
   image_id                  = data.aws_ssm_parameter.ecs_amis.value
   vpc_security_group_ids    = [data.aws_security_groups.vpc_default_sg.ids[0]]
-  instance_type             = "r5.8xlarge"
+  # instance_type             = "r5.8xlarge"
+  instance_type             = "r5.24xlarge"
+
   user_data                 = base64encode(templatefile("scripts/ecs.sh", { ecs_cluster = aws_ecs_cluster.default.name }))
   update_default_version    = true
 }
