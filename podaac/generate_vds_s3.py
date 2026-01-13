@@ -230,9 +230,9 @@ def main(
 
     # Filename for combined reference
     temporal = ""
-    if start_date or end_date:
-        start = start_date if start_date else "beginning"
-        end = end_date if end_date else "present"
+    if is_valid_date(start_date) or is_valid_date(end_date):
+        start = start_date if is_valid_date(start_date) else "beginning"
+        end = end_date if is_valid_date(end_date) else "present"
         temporal = f'{start}_to_{end}_'
 
     fname_combined_json = f'{collection}_{temporal}virtual_s3.json'
