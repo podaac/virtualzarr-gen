@@ -51,7 +51,7 @@ fi
 aws s3 sync . "s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/" --exclude "*" --include "*virtual*.json"
 
 # Translate all *_virtual_s3.json files to *_virtual_https.json using translate-s3-https
-for s3file in *_virtual_s3.json; do
+for s3file in *_virtual_s3*.json; do
   if [[ -f "$s3file" ]]; then
     httpsfile="${s3file/_virtual_s3.json/_virtual_https.json}"
     translate-s3-https "$s3file" "$httpsfile"
