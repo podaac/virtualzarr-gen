@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=too-many-statements
 """
 Generate Cloud Optimized Store Reference Files for Earthdata collections.
 
@@ -23,6 +24,7 @@ import fsspec
 import earthaccess
 import xarray as xr
 from virtualizarr import open_virtual_dataset
+import numpy as np
 from dask import delayed
 import dask.array as da
 from dask.distributed import Client
@@ -138,6 +140,7 @@ def main(
     start_date,
     end_date,
     debug=False,
+    level_2_data=False,
     cpu_count=16,
     memory_limit="12GB",
     batch_size=48
@@ -220,9 +223,40 @@ def main(
 
     # Combine references
     logging.info("Combining references...")
-    virtual_ds_combined = xr.combine_nested(
-        virtual_ds_list, concat_dim='time', coords="minimal", compat="override", combine_attrs='drop_conflicts'
-    )
+
+    virtual_ds_combined = None
+    if level_2_data:
+        basetime_str = "1970-01-01T00:00:00"  # times will be measured in seconds since this basetime UTC.
+
+        orbit_starttime_list = []
+        for g in granule_info:
+            datetime_str = g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'][:-1]  # -1 to remove "Z" at end.
+            datetime_obj = np.datetime64(datetime_str)
+            basetime_obj = np.datetime64(basetime_str)
+            timedelt = np.timedelta64(datetime_obj - basetime_obj, 's').astype(int)
+            orbit_starttime_list.append(timedelt)
+
+        # Wrap the orbit start time data in an xarray.DataArray, assigning CF-aligned attributes:
+        orbit_starttime_da = xr.DataArray(
+            data=orbit_starttime_list,
+            name="orbit_segment_start_time",
+            dims=["orbit_segment_start_time"],
+            attrs={
+                "units": "seconds since " + basetime_str,
+                "calendar": "gregorian",
+            },
+        )
+        concat_coords = ["lat", "lon"]
+        # Create the combined reference
+        virtual_ds_combined = xr.concat(
+            virtual_ds_list, orbit_starttime_da,
+            coords=concat_coords, compat='override', combine_attrs='drop_conflicts'
+        )
+
+    else:
+        virtual_ds_combined = xr.combine_nested(
+            virtual_ds_list, concat_dim='time', coords="minimal", compat="override", combine_attrs='drop_conflicts'
+        )
 
     if not virtual_ds_combined.attrs:
         logging.info("Global Attributes not found for generated dataset.")
@@ -267,6 +301,8 @@ def cli():
                         help="End date (e.g., 1-1-2025)")
     parser.add_argument("--debug", action="store_true",
                         default=True, help="Enable debug logging")
+    parser.add_argument("--level-2-data", action="store_true",
+                        default=False, help="Indicate if processing level 2 data")
     parser.add_argument("--cpu-count", type=int, default=16,
                         help="Number of Dask workers (default: 16)")
     parser.add_argument("--memory-limit", type=str, default="12GB",
@@ -281,6 +317,7 @@ def cli():
         args.start_date,
         args.end_date,
         args.debug,
+        args.level_2_data,
         args.cpu_count,
         args.memory_limit,
         args.batch_size
