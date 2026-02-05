@@ -145,7 +145,7 @@ resource "aws_iam_role" "app_task_exec" {
           Sid    = "ReadWriteS3"
           Action = [ "s3:ListBucket" ]
           Effect = "Allow"
-          Resource = [ "arn:aws:s3:::${var.output_bucket}" ]
+          Resource = [for bucket in var.output_bucket : "arn:aws:s3:::${bucket}"]
         },
         {
           Effect   = "Allow"
@@ -160,7 +160,7 @@ resource "aws_iam_role" "app_task_exec" {
             "s3:GetObjectACL",
             "s3:PutObjectACL"
           ]
-          Resource = [ "arn:aws:s3:::${var.output_bucket}/*" ]
+          Resource = [for bucket in var.output_bucket : "arn:aws:s3:::${bucket}/*"]
         }
       ]
     })
@@ -183,6 +183,27 @@ resource "aws_iam_role" "app_task_exec" {
       ]
     })
   }
+
+  inline_policy {
+    name = "allow-invoke-lambda"
+    policy = jsonencode({
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Sid = "InvokeLambda"
+          Effect = "Allow"
+          Action = [
+            "lambda:InvokeFunction"
+          ]
+          Resource = [
+            # replace with your Lambda ARNs or patterns
+            "arn:aws:lambda:${var.region}:${data.aws_caller_identity.current.account_id}:function:*"
+          ]
+        }
+      ]
+    })
+  }
+
 }
 
 /*

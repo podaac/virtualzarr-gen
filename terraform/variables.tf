@@ -1,4 +1,3 @@
-
 variable "app_name" {
     default = "virtualzarr-gen"
     type = string
@@ -18,7 +17,7 @@ variable "stage" {
 }
 
 variable "output_bucket" {
-    type = string
+    type = list(string)
 }
 
 variable "region" {
