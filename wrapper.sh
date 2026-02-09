@@ -3,7 +3,10 @@ set -euo pipefail  # Exit on error, undefined variables, pipe failures
 
 # Helper function to sync output files to S3
 sync_to_s3() {
-  aws s3 sync . "s3://$OUTPUT_BUCKET/virtualcollection/$COLLECTION/" --exclude "*" --include "*virtual*.json"
+  aws s3 sync . "s3://$OUTPUT_BUCKET/virtual_collections/$COLLECTION/" --exclude "*" --include "*virtual*.json"
+  if [[ -n "${STAGING_BUCKET}" ]]; then
+    aws s3 sync . "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/" --exclude "*" --include "*virtual*.json"
+  fi
 }
 
 # Helper function to translate S3 JSON files to HTTPS JSON files

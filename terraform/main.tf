@@ -132,6 +132,12 @@ resource "aws_iam_role" "app_task_exec" {
         Effect    = "Allow"
         Principal = { Service = "ec2.amazonaws.com" }
         Action    = "sts:AssumeRole"
+      },
+      {
+        Sid       = ""
+        Effect    = "Allow"
+        Principal = { Service = "lambda.amazonaws.com" }
+        Action    = "sts:AssumeRole"
       }
     ]
   })
@@ -186,19 +192,15 @@ resource "aws_iam_role" "app_task_exec" {
 
   inline_policy {
     name = "allow-invoke-lambda"
+
     policy = jsonencode({
       Version = "2012-10-17"
       Statement = [
         {
-          Sid = "InvokeLambda"
+          Sid    = "InvokeS3SyncLambda"
           Effect = "Allow"
-          Action = [
-            "lambda:InvokeFunction"
-          ]
-          Resource = [
-            # replace with your Lambda ARNs or patterns
-            "arn:aws:lambda:${var.region}:${data.aws_caller_identity.current.account_id}:function:*"
-          ]
+          Action = "lambda:InvokeFunction"
+          Resource = "arn:aws:lambda:${var.region}:${data.aws_caller_identity.current.account_id}:function:virtualizarr-${var.stage}-s3-bucket-sync"
         }
       ]
     })
