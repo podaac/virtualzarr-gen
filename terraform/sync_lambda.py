@@ -5,10 +5,10 @@ from botocore.exceptions import ClientError
 s3 = boto3.client("s3")
 
 # Defaults (used if no input provided)
-DEFAULT_SOURCE_BUCKET = "my-source-bucket"
-DEFAULT_SOURCE_PREFIX = "data/incoming/"
-DEFAULT_DEST_BUCKET = "my-dest-bucket"
-DEFAULT_DEST_PREFIX = "data/synced/"
+DEFAULT_SOURCE_BUCKET = "podaac-ops-services-cloud-optimizer"
+DEFAULT_SOURCE_PREFIX =  "virtual_collections/"
+DEFAULT_DEST_BUCKET = "podaac-uat-cumulus-public"
+DEFAULT_DEST_PREFIX = "virtual_collections/"
 
 def handler(event, context):
     """
@@ -46,6 +46,7 @@ def handler(event, context):
                 skipped += 1
                 continue
 
+            print(f"Copied s3://{source_bucket}/{source_key} -> s3://{dest_bucket}/{dest_key}")
             copy_object(source_bucket, source_key, dest_bucket, dest_key)
             copied += 1
 
@@ -63,13 +64,17 @@ def handler(event, context):
 
 
 def object_is_same(source_bucket, source_key, dest_bucket, dest_key):
-    """Check if object already exists and is identical (by ETag)"""
+    """Check if object already exists and has the same size"""
     try:
         src = s3.head_object(Bucket=source_bucket, Key=source_key)
         dst = s3.head_object(Bucket=dest_bucket, Key=dest_key)
-        return src["ETag"] == dst["ETag"]
+
+        # Compare sizes
+        return src["ContentLength"] == dst["ContentLength"]
+
     except ClientError as e:
         if e.response["Error"]["Code"] == "404":
+            # Destination object doesn't exist
             return False
         raise
 

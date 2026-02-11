@@ -18,3 +18,22 @@ resource "aws_lambda_function" "s3_sync" {
   source_code_hash = data.archive_file.lambda_zip.output_base64sha256
 
 }
+
+resource "aws_iam_role_policy" "lambda_logging" {
+  role = aws_iam_role.app_task_exec.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ]
+        Resource = "arn:aws:logs:*:*:*"
+      }
+    ]
+  })
+}
