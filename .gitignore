@@ -3,3 +3,4 @@
 **/.ipynb_checkpoints
 .python-version
 .DS_Store
+.venv/

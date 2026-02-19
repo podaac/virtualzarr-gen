@@ -13,3 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 ### Fixed
 ### Security
+
+
+## [0.1.0]
+### Added
+- Initial release of virtualzarr-gen
+### Changed
+### Deprecated 
+### Removed
+### Fixed
+### Security
