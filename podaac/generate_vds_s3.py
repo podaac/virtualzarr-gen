@@ -226,31 +226,40 @@ def main(
 
     virtual_ds_combined = None
     if level_2_data:
-        basetime_str = "1970-01-01T00:00:00"  # times will be measured in seconds since this basetime UTC.
 
-        orbit_starttime_list = []
-        for g in granule_info:
-            datetime_str = g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'][:-1]  # -1 to remove "Z" at end.
-            datetime_obj = np.datetime64(datetime_str)
-            basetime_obj = np.datetime64(basetime_str)
-            timedelt = np.timedelta64(datetime_obj - basetime_obj, 's').astype(int)
-            orbit_starttime_list.append(timedelt)
+        basetime_str = "1970-01-01T00:00:00"  # reference UTC
 
-        # Wrap the orbit start time data in an xarray.DataArray, assigning CF-aligned attributes:
+        # Extract all beginning times and convert to NumPy datetime64 in seconds
+        datetime_array = np.array(
+            [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'][:-1] 
+             for g in granule_info],
+            dtype='datetime64[s]'
+        )
+
+        # Compute timedeltas (seconds since basetime)
+        basetime_obj = np.datetime64(basetime_str, 's')
+        orbit_starttime_array = (datetime_array - basetime_obj).astype(int)
+
+        # Wrap in xarray.DataArray
         orbit_starttime_da = xr.DataArray(
-            data=orbit_starttime_list,
+            data=orbit_starttime_array,
             name="orbit_segment_start_time",
             dims=["orbit_segment_start_time"],
             attrs={
-                "units": "seconds since " + basetime_str,
+                "units": f"seconds since {basetime_str}",
                 "calendar": "gregorian",
             },
         )
+
         concat_coords = ["lat", "lon"]
-        # Create the combined reference
+
+        # Concatenate with virtual datasets
         virtual_ds_combined = xr.concat(
-            virtual_ds_list, orbit_starttime_da,
-            coords=concat_coords, compat='override', combine_attrs='drop_conflicts'
+            virtual_ds_list,
+            orbit_starttime_da,
+            coords=concat_coords,
+            compat='override',
+            combine_attrs='drop_conflicts'
         )
 
     else:
