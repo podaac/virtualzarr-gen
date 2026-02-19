@@ -10,8 +10,13 @@ COPY pyproject.toml poetry.lock* ./
 COPY podaac ./podaac
 COPY wrapper.sh ./
 
+COPY vds_basic_L2_dummytime_prod.ipynb ./
+
 # Install dependencies and your project
 RUN poetry config virtualenvs.create false && poetry install --no-interaction --no-ansi
+
+# Register Jupyter kernel for papermill (ipykernel is installed via poetry above)
+RUN python -m ipykernel install --name python3 --display-name "Python 3"
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y jq awscli
