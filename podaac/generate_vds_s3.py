@@ -245,7 +245,38 @@ def main(
         orbit_starttime_array = (datetime_array - basetime_obj).astype(int)
         logging.info("Computed orbit segment start time offsets (seconds since basetime). Example: %s", orbit_starttime_array[:5])
 
-        # Wrap in xarray.DataArray
+        # Set concat coordinates
+        concat_coords = ["lat", "lon"]
+        batched = []
+        batch_size = 200
+        num_batches = (len(virtual_ds_list) + batch_size - 1) // batch_size
+        logging.info("Batching virtual datasets for concatenation: %d batches of up to %d each", num_batches, batch_size)
+
+        for i, group in enumerate(partition_all(batch_size, virtual_ds_list), 1):
+            logging.info("Concatenating batch %d/%d with %d datasets...", i, num_batches, len(group))
+            # Calculate the correct slice for this batch
+            start_idx = (i - 1) * batch_size
+            end_idx = start_idx + len(group)
+            batch_orbit_starttime_da = xr.DataArray(
+                data=orbit_starttime_array[start_idx:end_idx],
+                name="orbit_segment_start_time",
+                dims=["orbit_segment_start_time"],
+                attrs={
+                    "units": f"seconds since {basetime_str}",
+                    "calendar": "gregorian",
+                },
+            )
+            ds = xr.concat(
+                group,
+                batch_orbit_starttime_da,
+                coords=concat_coords,
+                compat="override",
+                combine_attrs="drop_conflicts"
+            )
+            batched.append(ds)
+
+        logging.info("Concatenating all batches into final combined dataset...")
+        # Create a full orbit_starttime_da for the final concat
         orbit_starttime_da = xr.DataArray(
             data=orbit_starttime_array,
             name="orbit_segment_start_time",
@@ -255,28 +286,6 @@ def main(
                 "calendar": "gregorian",
             },
         )
-        logging.info("Created orbit_segment_start_time DataArray with dims: %s", orbit_starttime_da.dims)
-
-        concat_coords = ["lat", "lon"]
-        logging.info("Concatenating virtual datasets with orbit_segment_start_time along coords: %s", concat_coords)
-
-        batched = []
-        batch_size = 200
-        num_batches = (len(virtual_ds_list) + batch_size - 1) // batch_size
-        logging.info("Batching virtual datasets for concatenation: %d batches of up to %d each", num_batches, batch_size)
-
-        for i, group in enumerate(partition_all(batch_size, virtual_ds_list), 1):
-            logging.info("Concatenating batch %d/%d with %d datasets...", i, num_batches, len(group))
-            ds = xr.concat(
-                group,
-                orbit_starttime_da,
-                coords=concat_coords,
-                compat="override",
-                combine_attrs="drop_conflicts"
-            )
-            batched.append(ds)
-
-        logging.info("Concatenating all batches into final combined dataset...")
         virtual_ds_combined = xr.concat(
             batched,
             orbit_starttime_da,
