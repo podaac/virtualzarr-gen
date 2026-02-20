@@ -30,6 +30,7 @@ import dask.array as da
 from dask.distributed import Client
 from toolz import partition_all
 
+
 def print_memory_usage(note=""):
     """
     Log the current memory usage of the process.
