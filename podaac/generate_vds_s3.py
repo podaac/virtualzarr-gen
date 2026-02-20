@@ -344,6 +344,7 @@ def main(
     data_json = opends_withref(fname_combined_json, fs)
     logging.info("Test open with combined reference file: %s", data_json)
 
+
 def cli():
     """
     Command-line interface for generating cloud-optimized store reference files.
