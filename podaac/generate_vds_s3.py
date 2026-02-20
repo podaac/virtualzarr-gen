@@ -320,6 +320,8 @@ def main(
         del orbit_starttime_array
         del datetime_array
         del granule_info
+        client.close()
+        del client
 
     gc.collect()
 
@@ -341,9 +343,6 @@ def main(
     # Test lazy loading of the combined reference file
     data_json = opends_withref(fname_combined_json, fs)
     logging.info("Test open with combined reference file: %s", data_json)
-
-    client.close()
-
 
 def cli():
     """
