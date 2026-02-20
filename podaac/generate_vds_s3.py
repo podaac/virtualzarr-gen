@@ -228,17 +228,21 @@ def main(
     if level_2_data:
 
         basetime_str = "1970-01-01T00:00:00"  # reference UTC
+        logging.info("Level 2 data mode enabled. Using basetime: %s", basetime_str)
 
         # Extract all beginning times and convert to NumPy datetime64 in seconds
+        logging.info("Extracting orbit segment start times from granule metadata...")
         datetime_array = np.array(
             [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'][:-1]
              for g in granule_info],
             dtype='datetime64[s]'
         )
+        logging.info("Extracted %d orbit segment start times.", len(datetime_array))
 
         # Compute timedeltas (seconds since basetime)
         basetime_obj = np.datetime64(basetime_str, 's')
         orbit_starttime_array = (datetime_array - basetime_obj).astype(int)
+        logging.info("Computed orbit segment start time offsets (seconds since basetime). Example: %s", orbit_starttime_array[:5])
 
         # Wrap in xarray.DataArray
         orbit_starttime_da = xr.DataArray(
@@ -250,8 +254,10 @@ def main(
                 "calendar": "gregorian",
             },
         )
+        logging.info("Created orbit_segment_start_time DataArray with dims: %s", orbit_starttime_da.dims)
 
         concat_coords = ["lat", "lon"]
+        logging.info("Concatenating virtual datasets with orbit_segment_start_time along coords: %s", concat_coords)
 
         # Concatenate with virtual datasets
         virtual_ds_combined = xr.concat(
@@ -309,7 +315,7 @@ def cli():
     parser.add_argument("--end-date", type=str, default=None,
                         help="End date (e.g., 1-1-2025)")
     parser.add_argument("--debug", action="store_true",
-                        default=True, help="Enable debug logging")
+                        default=False, help="Enable debug logging")
     parser.add_argument("--level-2-data", action="store_true",
                         default=False, help="Indicate if processing level 2 data")
     parser.add_argument("--cpu-count", type=int, default=16,
