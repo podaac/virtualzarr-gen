@@ -276,6 +276,7 @@ def main(
                 combine_attrs="drop_conflicts"
             )
             batch_path = f'refs/batch_{i:05d}.json'
+            os.makedirs(os.path.dirname(batch_path), exist_ok=True)
             ds.virtualize.to_kerchunk(batch_path, format='json')
             batch_jsons.append(batch_path)
 
