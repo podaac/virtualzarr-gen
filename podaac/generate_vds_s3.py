@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=too-many-statements
+# pylint: disable=too-many-statements, protected-access
 """
 Generate Cloud Optimized Store Reference Files for Earthdata collections.
 
@@ -20,6 +20,7 @@ import logging
 import multiprocessing
 import gc
 import psutil
+import pandas as pd
 
 import fsspec
 import earthaccess
@@ -30,6 +31,7 @@ from dask import delayed
 import dask.array as da
 from dask.distributed import Client
 from toolz import partition_all
+import kerchunk.df
 
 
 def print_memory_usage(note=""):
@@ -249,7 +251,7 @@ def main(
         # Set concat coordinates
         concat_coords = ["lat", "lon"]
         batched = []
-        batch_size = 200
+        batch_size = 500
         num_batches = (len(virtual_ds_list) + batch_size - 1) // batch_size
         logging.info("Batching virtual datasets for concatenation: %d batches of up to %d each", num_batches, batch_size)
 
@@ -322,8 +324,18 @@ def main(
     gc.collect()
 
     fname_combined_json = f'{collection}_{temporal}virtual_s3.json'
-    virtual_ds_combined.virtualize.to_kerchunk(
-        fname_combined_json, format='json')
+    fname_parquet = f'{collection}_{temporal}virtual_s3.parquet'
+
+    if level_2_data:
+        virtual_ds_combined.virtualize.to_kerchunk(fname_parquet, format='parquet')
+        logging.info("Parquet write complete")
+        df = pd.read_parquet(fname_parquet)
+        kerchunk.df._write_json(fname_combined_json, df)
+        logging.info("JSON write complete")
+    else:
+        virtual_ds_combined.virtualize.to_kerchunk(
+            fname_combined_json, format='json')
+
     logging.info("Saved: %s", fname_combined_json)
 
     # Test lazy loading of the combined reference file
