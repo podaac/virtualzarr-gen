@@ -269,22 +269,20 @@ def main(
             logging.info("Concatenating batch %d/%d with %d datasets...", i, num_batches, len(group))
             ds = xr.concat(
                 group,
-                dim=orbit_starttime_da,
-                coords=concat_coords,          # avoid coord reprocessing
+                orbit_starttime_da,
+                coords=concat_coords,
                 compat="override",
-                combine_attrs="override",  # cheaper than drop_conflicts
-                join="exact"               # skip alignment
+                combine_attrs="drop_conflicts"
             )
             batched.append(ds)
 
         logging.info("Concatenating all batches into final combined dataset...")
         virtual_ds_combined = xr.concat(
             batched,
-            dim=orbit_starttime_da,
+            orbit_starttime_da,
             coords=concat_coords,
             compat="override",
-            combine_attrs="override",
-            join="exact"
+            combine_attrs="drop_conflicts"
         )
         logging.info("Final concatenation complete. Combined dataset ready.")
 
