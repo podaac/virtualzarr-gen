@@ -18,6 +18,7 @@ import sys
 import argparse
 import logging
 import multiprocessing
+import gc
 import psutil
 
 import fsspec
@@ -310,6 +311,15 @@ def main(
         start = start_date if is_valid_date(start_date) else "beginning"
         end = end_date if is_valid_date(end_date) else "present"
         temporal = f'{start}_to_{end}_'
+
+    del virtual_ds_list  # Free memory from individual virtual datasets
+    if level_2_data:
+        del batched
+        del orbit_starttime_array
+        del datetime_array
+        del granule_info
+
+    gc.collect()
 
     fname_combined_json = f'{collection}_{temporal}virtual_s3.json'
     virtual_ds_combined.virtualize.to_kerchunk(
