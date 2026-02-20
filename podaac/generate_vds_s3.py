@@ -28,7 +28,7 @@ import numpy as np
 from dask import delayed
 import dask.array as da
 from dask.distributed import Client
-
+from toolz import partition_all
 
 def print_memory_usage(note=""):
     """
@@ -259,14 +259,33 @@ def main(
         concat_coords = ["lat", "lon"]
         logging.info("Concatenating virtual datasets with orbit_segment_start_time along coords: %s", concat_coords)
 
-        # Concatenate with virtual datasets
+        batched = []
+        batch_size = 200
+        num_batches = (len(virtual_ds_list) + batch_size - 1) // batch_size
+        logging.info("Batching virtual datasets for concatenation: %d batches of up to %d each", num_batches, batch_size)
+
+        for i, group in enumerate(partition_all(batch_size, virtual_ds_list), 1):
+            logging.info("Concatenating batch %d/%d with %d datasets...", i, num_batches, len(group))
+            ds = xr.concat(
+                group,
+                dim=orbit_starttime_da,
+                coords=concat_coords,          # avoid coord reprocessing
+                compat="override",
+                combine_attrs="override",  # cheaper than drop_conflicts
+                join="exact"               # skip alignment
+            )
+            batched.append(ds)
+
+        logging.info("Concatenating all batches into final combined dataset...")
         virtual_ds_combined = xr.concat(
-            virtual_ds_list,
-            orbit_starttime_da,
+            batched,
+            dim=orbit_starttime_da,
             coords=concat_coords,
-            compat='override',
-            combine_attrs='drop_conflicts'
+            compat="override",
+            combine_attrs="override",
+            join="exact"
         )
+        logging.info("Final concatenation complete. Combined dataset ready.")
 
     else:
         virtual_ds_combined = xr.combine_nested(
