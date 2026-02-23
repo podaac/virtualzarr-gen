@@ -233,7 +233,7 @@ def main(
 
         # Extract all beginning times and convert to NumPy datetime64 in seconds
         datetime_array = np.array(
-            [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'][:-1] 
+            [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'][:-1]
              for g in granule_info],
             dtype='datetime64[s]'
         )
