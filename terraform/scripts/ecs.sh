@@ -3,7 +3,7 @@ set -e
 
 # --- Swap setup ---
 SWAPFILE=/swapfile
-SWAPSIZE=64G   # swap size (adjust as needed)
+SWAPSIZE=256G   # swap size (adjust as needed)
 
 # create swap file
 fallocate -l $SWAPSIZE $SWAPFILE

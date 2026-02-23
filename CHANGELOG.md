@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 ### Added
 - Added AWS bucket sync lambda
+- Added an EBS for ec2
+- Added in memory swap for the ec2
 ### Changed
 - [issue/7] (https://github.com/podaac/virtualzarr-gen/issues/7): Update script for L2 data
 ### Deprecated 
