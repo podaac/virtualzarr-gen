@@ -285,9 +285,9 @@ def main(
             virtual_ds_list, concat_dim='time', coords="minimal", compat="override", combine_attrs='drop_conflicts'
         )
 
-    if not virtual_ds_combined.attrs:
-        logging.info("Global Attributes not found for generated dataset.")
-        sys.exit(1)
+        if not virtual_ds_combined.attrs:
+            logging.info("Global Attributes not found for generated dataset.")
+            sys.exit(1)
 
     # Filename for combined reference
     temporal = ""
