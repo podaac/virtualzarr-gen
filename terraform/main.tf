@@ -224,6 +224,15 @@ resource "aws_launch_template" "app-lt" {
   # instance_type             = "r5.8xlarge"
   instance_type             = "r5.24xlarge"
 
+  block_device_mappings {
+    device_name = "/dev/xvda"  # root volume
+    ebs {
+      volume_size           = 1024   # 1 TB
+      volume_type           = "gp3"
+      delete_on_termination = true
+    }
+  }
+
   user_data                 = base64encode(templatefile("scripts/ecs.sh", { ecs_cluster = aws_ecs_cluster.default.name }))
   update_default_version    = true
 }
