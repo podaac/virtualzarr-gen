@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=too-many-statements, protected-access
+# pylint: disable=too-many-statements
 """
 Generate Cloud Optimized Store Reference Files for Earthdata collections.
 
@@ -18,8 +18,6 @@ import sys
 import argparse
 import logging
 import multiprocessing
-import json
-import gc
 import psutil
 
 import fsspec
@@ -30,8 +28,6 @@ import numpy as np
 from dask import delayed
 import dask.array as da
 from dask.distributed import Client
-from toolz import partition_all
-from kerchunk.combine import MultiZarrToZarr
 
 
 def print_memory_usage(note=""):
@@ -223,6 +219,8 @@ def main(
     client = Client(n_workers=cpu_count, threads_per_worker=1, memory_limit=memory_limit)
 
     logging.info("Generating references for all files...")
+    if level_2_data:
+        coord_vars = []
     virtual_ds_list = process_in_batches(data_s3links, coord_vars, batch_size=batch_size)
 
     # Combine references
@@ -232,62 +230,48 @@ def main(
     if level_2_data:
 
         basetime_str = "1970-01-01T00:00:00"  # reference UTC
-        logging.info("Level 2 data mode enabled. Using basetime: %s", basetime_str)
 
         # Extract all beginning times and convert to NumPy datetime64 in seconds
-        logging.info("Extracting orbit segment start times from granule metadata...")
         datetime_array = np.array(
-            [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'][:-1]
+            [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'][:-1] 
              for g in granule_info],
             dtype='datetime64[s]'
         )
-        logging.info("Extracted %d orbit segment start times.", len(datetime_array))
 
         # Compute timedeltas (seconds since basetime)
         basetime_obj = np.datetime64(basetime_str, 's')
         orbit_starttime_array = (datetime_array - basetime_obj).astype(int)
-        logging.info("Computed orbit segment start time offsets (seconds since basetime). Example: %s", orbit_starttime_array[:5])
 
-        # Set concat coordinates
+        # Wrap in xarray.DataArray
+        orbit_starttime_da = xr.DataArray(
+            data=orbit_starttime_array,
+            name="orbit_segment_start_time",
+            dims=["orbit_segment_start_time"],
+            attrs={
+                "units": f"seconds since {basetime_str}",
+                "calendar": "gregorian",
+            },
+        )
+
         concat_coords = ["lat", "lon"]
-        batch_jsons = []
-        batch_size = 500
-        num_batches = (len(virtual_ds_list) + batch_size - 1) // batch_size
-        logging.info("Batching virtual datasets for concatenation: %d batches of up to %d each", num_batches, batch_size)
 
-        for i, group in enumerate(partition_all(batch_size, virtual_ds_list), 1):
-            logging.info("Concatenating batch %d/%d with %d datasets...", i, num_batches, len(group))
-            start_idx = (i - 1) * batch_size
-            end_idx = start_idx + len(group)
-            batch_orbit_starttime_da = xr.DataArray(
-                data=orbit_starttime_array[start_idx:end_idx],
-                name="orbit_segment_start_time",
-                dims=["orbit_segment_start_time"],
-                attrs={
-                    "units": f"seconds since {basetime_str}",
-                    "calendar": "gregorian",
-                },
-            )
-            ds = xr.concat(
-                group,
-                batch_orbit_starttime_da,
-                coords=concat_coords,
-                compat="override",
-                combine_attrs="drop_conflicts"
-            )
-            batch_path = f'refs/batch_{i:05d}.json'
-            os.makedirs(os.path.dirname(batch_path), exist_ok=True)
-            ds.virtualize.to_kerchunk(batch_path, format='json')
-            batch_jsons.append(batch_path)
+        # Concatenate with virtual datasets
+        virtual_ds_combined = xr.concat(
+            virtual_ds_list,
+            orbit_starttime_da,
+            coords=concat_coords,
+            compat='override',
+            combine_attrs='drop_conflicts'
+        )
 
     else:
         virtual_ds_combined = xr.combine_nested(
             virtual_ds_list, concat_dim='time', coords="minimal", compat="override", combine_attrs='drop_conflicts'
         )
 
-        if not virtual_ds_combined.attrs:
-            logging.info("Global Attributes not found for generated dataset.")
-            sys.exit(1)
+    if not virtual_ds_combined.attrs:
+        logging.info("Global Attributes not found for generated dataset.")
+        sys.exit(1)
 
     # Filename for combined reference
     temporal = ""
@@ -296,34 +280,16 @@ def main(
         end = end_date if is_valid_date(end_date) else "present"
         temporal = f'{start}_to_{end}_'
 
-    if level_2_data:
-        del orbit_starttime_array
-        del datetime_array
-        del granule_info
-        client.close()
-        del client
-
-    gc.collect()
-
     fname_combined_json = f'{collection}_{temporal}virtual_s3.json'
-
-    if level_2_data:
-        # combine all batch jsons into final json
-        mzz = MultiZarrToZarr(
-            batch_jsons,
-            concat_dims=['orbit_segment_start_time'],
-        )
-        out = mzz.translate()
-        with open(fname_combined_json, 'w') as f:
-            json.dump(out, f)
-    else:
-        virtual_ds_combined.virtualize.to_kerchunk(fname_combined_json, format='json')
-
+    virtual_ds_combined.virtualize.to_kerchunk(
+        fname_combined_json, format='json')
     logging.info("Saved: %s", fname_combined_json)
 
     # Test lazy loading of the combined reference file
     data_json = opends_withref(fname_combined_json, fs)
     logging.info("Test open with combined reference file: %s", data_json)
+
+    client.close()
 
 
 def cli():
@@ -345,7 +311,7 @@ def cli():
     parser.add_argument("--end-date", type=str, default=None,
                         help="End date (e.g., 1-1-2025)")
     parser.add_argument("--debug", action="store_true",
-                        default=False, help="Enable debug logging")
+                        default=True, help="Enable debug logging")
     parser.add_argument("--level-2-data", action="store_true",
                         default=False, help="Indicate if processing level 2 data")
     parser.add_argument("--cpu-count", type=int, default=16,
