@@ -308,7 +308,7 @@ def cli():
     parser.add_argument("--end-date", type=str, default=None,
                         help="End date (e.g., 1-1-2025)")
     parser.add_argument("--debug", action="store_true",
-                        default=True, help="Enable debug logging")
+                        default=False, help="Enable debug logging")
     parser.add_argument("--level-2-data", action="store_true",
                         default=False, help="Indicate if processing level 2 data")
     parser.add_argument("--cpu-count", type=int, default=16,
