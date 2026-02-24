@@ -89,7 +89,7 @@ def process_in_batches(data_s3links, coord_vars, client, batch_size=48):
 
     This function processes S3 links in batches to avoid overwhelming the
     system with too many concurrent operations. It refreshes the filesystem
-    connection between batches to prevent token expiration and uses Dask 
+    connection between batches to prevent token expiration and uses Dask
     for parallel processing.
 
     Args:
