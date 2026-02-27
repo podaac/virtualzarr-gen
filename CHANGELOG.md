@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Changed
+### Deprecated 
+### Removed
+### Fixed
+### Security
+
+
+## [0.2.0]
+### Added
 - Added AWS bucket sync lambda
 - Added an EBS for ec2
 - Added in memory swap for the ec2
