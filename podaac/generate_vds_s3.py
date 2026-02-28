@@ -219,7 +219,9 @@ def main(
     # Parallel reference creation for all files using Dask Client
     logging.info("CPU count = %d", multiprocessing.cpu_count())
 
-    with Client(n_workers=cpu_count, threads_per_worker=1, memory_limit=memory_limit) as client:
+    client = Client(n_workers=cpu_count, threads_per_worker=1, memory_limit=memory_limit)
+
+    try:
         logging.info("Generating references for all files...")
 
         virtual_ds_list = process_in_batches(data_s3links, coord_vars, client, batch_size=batch_size)
@@ -287,6 +289,21 @@ def main(
         fs = earthaccess.get_s3_filesystem(daac="PODAAC")
         data_json = opends_withref(fname_combined_json, fs)
         logging.info("Test open with combined reference file: %s", data_json)
+
+    finally:
+        # 2. Safely tear down the client and cluster
+        logging.info("Shutting down Dask client and cluster...")
+        try:
+            client.close()
+        except Exception as e:
+            logging.warning("Error closing Dask client: %s", e)
+
+        try:
+            # Access the implicit cluster via client.cluster
+            if client.cluster:
+                client.cluster.close(timeout=15)
+        except TimeoutError:
+            logging.warning("Dask cluster shutdown timed out. Safely ignoring and continuing exit.")
 
 
 def cli():
