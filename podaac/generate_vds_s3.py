@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=too-many-statements
 """
 Generate Cloud Optimized Store Reference Files for Earthdata collections.
 
@@ -23,8 +24,7 @@ import fsspec
 import earthaccess
 import xarray as xr
 from virtualizarr import open_virtual_dataset
-from dask import delayed
-import dask.array as da
+import numpy as np
 from dask.distributed import Client
 
 
@@ -83,25 +83,24 @@ def opends_withref(ref, fs_data):
     return data
 
 
-def process_in_batches(data_s3links, coord_vars, batch_size=48):
+def process_in_batches(data_s3links, coord_vars, client, batch_size=48):
     """
     Process S3 links in batches, creating virtual datasets for each file.
 
     This function processes S3 links in batches to avoid overwhelming the
     system with too many concurrent operations. It refreshes the filesystem
-    connection between batches and uses Dask for parallel processing.
+    connection between batches to prevent token expiration and uses Dask
+    for parallel processing.
 
     Args:
         data_s3links (list): List of S3 URLs to process.
         coord_vars (list): List of coordinate variable names to load into memory.
-        batch_size (int): Number of files to process in each batch. Default is 36.
+        client (dask.distributed.Client): The active Dask client for submitting tasks.
+        batch_size (int): Number of files to process in each batch. Default is 48.
 
     Returns:
         list: List of virtual xarray Datasets, one for each input S3 link.
     """
-    earthaccess.login()
-    open_vds_par = delayed(open_virtual_dataset)
-
     virtual_ds_list = []
     total_batches = (len(data_s3links) + batch_size - 1) // batch_size
 
@@ -111,25 +110,32 @@ def process_in_batches(data_s3links, coord_vars, batch_size=48):
 
         logging.info("Processing batch %d of %d (%d files)",
                      batch_num, total_batches, len(batch))
-        # Get HTTPS session for fsspec
+
+        # Explicitly refresh the session and tokens to avoid the 1-hour timeout
+        earthaccess.login()
         fs = earthaccess.get_s3_filesystem(daac="PODAAC")
         reader_opts = {"storage_options": fs.storage_options}
-        tasks = [
-            open_vds_par(
-                p,
-                indexes={},
-                reader_options=reader_opts,
-                loadable_variables=coord_vars,
-                decode_times=False
-            )
-            for p in batch
-        ]
 
-        batch_results = list(da.compute(*tasks))
+        # Dispatch tasks to workers with the freshly minted credentials
+        futures = client.map(
+            open_virtual_dataset,
+            batch,
+            indexes={},
+            reader_options=reader_opts,
+            loadable_variables=coord_vars,
+            decode_times=False
+        )
 
+        # Gather results (blocks until the batch is complete)
+        batch_results = client.gather(futures)
         virtual_ds_list.extend(batch_results)
 
     return virtual_ds_list
+
+
+def is_valid_date(val):
+    """Helper to check if a date string is valid."""
+    return val not in (None, "None", "")
 
 
 def main(
@@ -138,6 +144,7 @@ def main(
     start_date,
     end_date,
     debug=False,
+    level_2_data=False,
     cpu_count=16,
     memory_limit="12GB",
     batch_size=48
@@ -161,6 +168,7 @@ def main(
         end_date (str, optional): End date for temporal filtering
             (e.g., "1-1-2025"). If None, searches to present.
         debug (bool): Enable debug logging. Default is False.
+        level_2_data (bool): Indicate if processing level 2 data.
         cpu_count (int): Number of Dask workers. Default is 16.
         memory_limit (str): Memory limit per Dask worker (e.g., "12GB").
             Default is "12GB".
@@ -187,64 +195,115 @@ def main(
     # Earthdata login
     earthaccess.login()
 
-    # Get HTTPS session for fsspec
-    fs = earthaccess.get_s3_filesystem(daac="PODAAC")
-
     # Search for granules
-    def is_valid_date(val):
-        return val not in (None, "None", "")
+    temporal = (start_date, end_date) if (is_valid_date(start_date) or is_valid_date(end_date)) else None
 
-    if is_valid_date(start_date) or is_valid_date(end_date):
+    if temporal:
         logging.info("Searching granules with temporal filter - start_date: %s, end_date: %s", start_date, end_date)
-        granule_info = earthaccess.search_data(
-            short_name=collection,
-            temporal=(start_date, end_date)
-        )
+        granule_info = earthaccess.search_data(short_name=collection, temporal=temporal)
     else:
         logging.info("Getting all granules...")
         granule_info = earthaccess.search_data(short_name=collection)
+
+    if not granule_info:
+        logging.warning("No granules found matching criteria. Exiting.")
+        sys.exit(0)
 
     # Get S3 links
     logging.info("Found %d granules.", len(granule_info))
     data_s3links = [g.data_links(access="direct")[0] for g in granule_info]
 
     logging.info("Found %d data files.", len(data_s3links))
-    coord_vars = loadable_coord_vars.split(",")
+    coord_vars = [] if level_2_data else loadable_coord_vars.split(",")
 
-    # Parallel reference creation for all files
+    # Parallel reference creation for all files using Dask Client
     logging.info("CPU count = %d", multiprocessing.cpu_count())
+
     client = Client(n_workers=cpu_count, threads_per_worker=1, memory_limit=memory_limit)
 
-    logging.info("Generating references for all files...")
-    virtual_ds_list = process_in_batches(data_s3links, coord_vars, batch_size=batch_size)
+    try:
+        logging.info("Generating references for all files...")
 
-    # Combine references
-    logging.info("Combining references...")
-    virtual_ds_combined = xr.combine_nested(
-        virtual_ds_list, concat_dim='time', coords="minimal", compat="override", combine_attrs='drop_conflicts'
-    )
+        virtual_ds_list = process_in_batches(data_s3links, coord_vars, client, batch_size=batch_size)
 
-    if not virtual_ds_combined.attrs:
-        logging.info("Global Attributes not found for generated dataset.")
-        sys.exit(1)
+        # Combine references
+        logging.info("Combining references...")
 
-    # Filename for combined reference
-    temporal = ""
-    if is_valid_date(start_date) or is_valid_date(end_date):
-        start = start_date if is_valid_date(start_date) else "beginning"
-        end = end_date if is_valid_date(end_date) else "present"
-        temporal = f'{start}_to_{end}_'
+        virtual_ds_combined = None
+        if level_2_data:
 
-    fname_combined_json = f'{collection}_{temporal}virtual_s3.json'
-    virtual_ds_combined.virtualize.to_kerchunk(
-        fname_combined_json, format='json')
-    logging.info("Saved: %s", fname_combined_json)
+            basetime_str = "1970-01-01T00:00:00"  # reference UTC
 
-    # Test lazy loading of the combined reference file
-    data_json = opends_withref(fname_combined_json, fs)
-    logging.info("Test open with combined reference file: %s", data_json)
+            # Extract all beginning times and convert to NumPy datetime64 in seconds
+            raw_dates = [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'] for g in granule_info]
+            datetime_array = np.array(raw_dates, dtype='datetime64[s]')
 
-    client.close()
+            # Compute timedeltas (seconds since basetime)
+            basetime_obj = np.datetime64(basetime_str, 's')
+            orbit_starttime_array = (datetime_array - basetime_obj).astype(int)
+
+            # Wrap in xarray.DataArray
+            orbit_starttime_da = xr.DataArray(
+                data=orbit_starttime_array,
+                name="orbit_segment_start_time",
+                dims=["orbit_segment_start_time"],
+                attrs={
+                    "units": f"seconds since {basetime_str}",
+                    "calendar": "gregorian",
+                },
+            )
+
+            concat_coords = ["lat", "lon"]
+
+            # Concatenate with virtual datasets
+            virtual_ds_combined = xr.concat(
+                virtual_ds_list,
+                orbit_starttime_da,
+                coords=concat_coords,
+                compat='override',
+                combine_attrs='drop_conflicts'
+            )
+
+        else:
+            virtual_ds_combined = xr.combine_nested(
+                virtual_ds_list, concat_dim='time', coords="minimal", compat="override", combine_attrs='drop_conflicts'
+            )
+
+        if not virtual_ds_combined.attrs:
+            logging.info("Global Attributes not found for generated dataset.")
+            sys.exit(1)
+
+        # Filename for combined reference
+        temporal_str = ""
+        if temporal:
+            start = start_date if is_valid_date(start_date) else "beginning"
+            end = end_date if is_valid_date(end_date) else "present"
+            temporal_str = f'{start}_to_{end}_'
+
+        fname_combined_json = f'{collection}_{temporal_str}virtual_s3.json'
+        virtual_ds_combined.virtualize.to_kerchunk(
+            fname_combined_json, format='json')
+        logging.info("Saved: %s", fname_combined_json)
+
+        # Test lazy loading of the combined reference file
+        fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+        data_json = opends_withref(fname_combined_json, fs)
+        logging.info("Test open with combined reference file: %s", data_json)
+
+    finally:
+        # 2. Safely tear down the client and cluster
+        logging.info("Shutting down Dask client and cluster...")
+        try:
+            client.close()
+        except Exception as e:
+            logging.warning("Error closing Dask client: %s", e)
+
+        try:
+            # Access the implicit cluster via client.cluster
+            if client.cluster:
+                client.cluster.close(timeout=15)
+        except TimeoutError:
+            logging.warning("Dask cluster shutdown timed out. Safely ignoring and continuing exit.")
 
 
 def cli():
@@ -266,7 +325,9 @@ def cli():
     parser.add_argument("--end-date", type=str, default=None,
                         help="End date (e.g., 1-1-2025)")
     parser.add_argument("--debug", action="store_true",
-                        default=True, help="Enable debug logging")
+                        default=False, help="Enable debug logging")
+    parser.add_argument("--level-2-data", action="store_true",
+                        default=False, help="Indicate if processing level 2 data")
     parser.add_argument("--cpu-count", type=int, default=16,
                         help="Number of Dask workers (default: 16)")
     parser.add_argument("--memory-limit", type=str, default="12GB",
@@ -281,6 +342,7 @@ def cli():
         args.start_date,
         args.end_date,
         args.debug,
+        args.level_2_data,
         args.cpu_count,
         args.memory_limit,
         args.batch_size

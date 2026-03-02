@@ -132,6 +132,12 @@ resource "aws_iam_role" "app_task_exec" {
         Effect    = "Allow"
         Principal = { Service = "ec2.amazonaws.com" }
         Action    = "sts:AssumeRole"
+      },
+      {
+        Sid       = ""
+        Effect    = "Allow"
+        Principal = { Service = "lambda.amazonaws.com" }
+        Action    = "sts:AssumeRole"
       }
     ]
   })
@@ -145,7 +151,7 @@ resource "aws_iam_role" "app_task_exec" {
           Sid    = "ReadWriteS3"
           Action = [ "s3:ListBucket" ]
           Effect = "Allow"
-          Resource = [ "arn:aws:s3:::${var.output_bucket}" ]
+          Resource = [for bucket in var.output_bucket : "arn:aws:s3:::${bucket}"]
         },
         {
           Effect   = "Allow"
@@ -160,7 +166,7 @@ resource "aws_iam_role" "app_task_exec" {
             "s3:GetObjectACL",
             "s3:PutObjectACL"
           ]
-          Resource = [ "arn:aws:s3:::${var.output_bucket}/*" ]
+          Resource = [for bucket in var.output_bucket : "arn:aws:s3:::${bucket}/*"]
         }
       ]
     })
@@ -183,6 +189,23 @@ resource "aws_iam_role" "app_task_exec" {
       ]
     })
   }
+
+  inline_policy {
+    name = "allow-invoke-lambda"
+
+    policy = jsonencode({
+      Version = "2012-10-17"
+      Statement = [
+        {
+          Sid    = "InvokeS3SyncLambda"
+          Effect = "Allow"
+          Action = "lambda:InvokeFunction"
+          Resource = "arn:aws:lambda:${var.region}:${data.aws_caller_identity.current.account_id}:function:virtualizarr-${var.stage}-s3-bucket-sync"
+        }
+      ]
+    })
+  }
+
 }
 
 /*
@@ -200,6 +223,15 @@ resource "aws_launch_template" "app-lt" {
   vpc_security_group_ids    = [data.aws_security_groups.vpc_default_sg.ids[0]]
   # instance_type             = "r5.8xlarge"
   instance_type             = "r5.24xlarge"
+
+  block_device_mappings {
+    device_name = "/dev/xvda"  # root volume
+    ebs {
+      volume_size           = 1024   # 1 TB
+      volume_type           = "gp3"
+      delete_on_termination = true
+    }
+  }
 
   user_data                 = base64encode(templatefile("scripts/ecs.sh", { ecs_cluster = aws_ecs_cluster.default.name }))
   update_default_version    = true
