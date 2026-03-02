@@ -64,13 +64,18 @@ def handler(event, context):
 
 
 def object_is_same(source_bucket, source_key, dest_bucket, dest_key):
-    """Check if object already exists and has the same size"""
+    """Check if object already exists, has the same size, and same checksum (ETag)"""
     try:
         src = s3.head_object(Bucket=source_bucket, Key=source_key)
         dst = s3.head_object(Bucket=dest_bucket, Key=dest_key)
 
-        # Compare sizes
-        return src["ContentLength"] == dst["ContentLength"]
+        if src["ContentLength"] != dst["ContentLength"]:
+            return False
+            
+        if src.get("ETag") != dst.get("ETag"):
+            return False
+
+        return True
 
     except ClientError as e:
         if e.response["Error"]["Code"] == "404":
@@ -80,9 +85,10 @@ def object_is_same(source_bucket, source_key, dest_bucket, dest_key):
 
 
 def copy_object(source_bucket, source_key, dest_bucket, dest_key):
-    """Copy object from source to destination"""
+    """Copy object from source to destination and grant bucket owner full control"""
     s3.copy_object(
         Bucket=dest_bucket,
         Key=dest_key,
-        CopySource={"Bucket": source_bucket, "Key": source_key}
+        CopySource={"Bucket": source_bucket, "Key": source_key},
+        ACL="bucket-owner-full-control"
     )
