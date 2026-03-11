@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=too-many-statements
+# pylint: disable=too-many-statements, too-many-branches
 """
 Generate Cloud Optimized Store Reference Files for Earthdata collections.
 
@@ -26,6 +26,7 @@ import xarray as xr
 from virtualizarr import open_virtual_dataset
 import numpy as np
 from dask.distributed import Client
+import pandas as pd
 
 
 def print_memory_usage(note=""):
@@ -229,7 +230,7 @@ def main(
     logging.info("Found %d data files.", len(data_s3links))
     coord_vars = [] if level_2_data else loadable_coord_vars.split(",")
     if collection == "SWOT_L2_LR_SSH_Basic_2.0":
-        coord_vars = ["num_lines","num_pixels"]
+        coord_vars = ["num_lines", "num_pixels"]
 
     # Parallel reference creation for all files using Dask Client
     logging.info("CPU count = %d", multiprocessing.cpu_count())
@@ -258,7 +259,7 @@ def main(
                 # Create panda list for better management and naming
                 orbit_start_sorted = pd.Index(orbit_start_sorted, name="orbit")
 
-                coords_list = ['latitude', 'longitude' ]
+                coords_list = ['latitude', 'longitude']
                 virtual_ds_combined = xr.concat(
                     virtual_ds_list_sorted,
                     orbit_start_sorted,
