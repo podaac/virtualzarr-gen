@@ -195,19 +195,32 @@ def main(
     # Earthdata login
     earthaccess.login()
 
-    # Search for granules
     temporal = (start_date, end_date) if (is_valid_date(start_date) or is_valid_date(end_date)) else None
 
-    if temporal:
-        logging.info("Searching granules with temporal filter - start_date: %s, end_date: %s", start_date, end_date)
-        granule_info = earthaccess.search_data(short_name=collection, temporal=temporal)
+    # Search for granules
+    if collection == "SWOT_L2_LR_SSH_Basic_2.0":
+        granule_info_1 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_Basic_2.0",
+            granule_name="SWOT_L2_LR_SSH_Basic*PGC*.nc",
+            temporal=("2023-07-26", "2024-01-24"),
+        )
+        granule_info_2 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_Basic_2.0",
+            granule_name="SWOT_L2_LR_SSH_Basic*PIC*.nc",
+            temporal=("2024-01-25", "2025-05-03"),
+        )
+        granule_info = granule_info_1 + granule_info_2
     else:
-        logging.info("Getting all granules...")
-        granule_info = earthaccess.search_data(short_name=collection)
+        if temporal:
+            logging.info("Searching granules with temporal filter - start_date: %s, end_date: %s", start_date, end_date)
+            granule_info = earthaccess.search_data(short_name=collection, temporal=temporal)
+        else:
+            logging.info("Getting all granules...")
+            granule_info = earthaccess.search_data(short_name=collection)
 
-    if not granule_info:
-        logging.warning("No granules found matching criteria. Exiting.")
-        sys.exit(0)
+        if not granule_info:
+            logging.warning("No granules found matching criteria. Exiting.")
+            sys.exit(0)
 
     # Get S3 links
     logging.info("Found %d granules.", len(granule_info))
@@ -215,6 +228,8 @@ def main(
 
     logging.info("Found %d data files.", len(data_s3links))
     coord_vars = [] if level_2_data else loadable_coord_vars.split(",")
+    if collection == "SWOT_L2_LR_SSH_Basic_2.0":
+        coord_vars = ["num_lines","num_pixels"]
 
     # Parallel reference creation for all files using Dask Client
     logging.info("CPU count = %d", multiprocessing.cpu_count())
@@ -232,37 +247,59 @@ def main(
         virtual_ds_combined = None
         if level_2_data:
 
-            basetime_str = "1970-01-01T00:00:00"  # reference UTC
+            if collection == "SWOT_L2_LR_SSH_Basic_2.0":
 
-            # Extract all beginning times and convert to NumPy datetime64 in seconds
-            raw_dates = [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'] for g in granule_info]
-            datetime_array = np.array(raw_dates, dtype='datetime64[s]')
+                orbit_start = [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'] for g in granule_info]
 
-            # Compute timedeltas (seconds since basetime)
-            basetime_obj = np.datetime64(basetime_str, 's')
-            orbit_starttime_array = (datetime_array - basetime_obj).astype(int)
+                # Sort by orbits so they algin monotonically in time and every else too.
+                pairs = sorted(zip(orbit_start, virtual_ds_list), key=lambda x: x[0])
+                orbit_start_sorted, virtual_ds_list_sorted = zip(*pairs)
 
-            # Wrap in xarray.DataArray
-            orbit_starttime_da = xr.DataArray(
-                data=orbit_starttime_array,
-                name="orbit_segment_start_time",
-                dims=["orbit_segment_start_time"],
-                attrs={
-                    "units": f"seconds since {basetime_str}",
-                    "calendar": "gregorian",
-                },
-            )
+                # Create panda list for better management and naming
+                orbit_start_sorted = pd.Index(orbit_start_sorted, name="orbit")
 
-            concat_coords = ["lat", "lon"]
+                coords_list = ['latitude', 'longitude' ]
+                virtual_ds_combined = xr.concat(
+                    virtual_ds_list_sorted,
+                    orbit_start_sorted,
+                    coords=coords_list,
+                    compat='override',
+                    combine_attrs='drop_conflicts'
+                )
 
-            # Concatenate with virtual datasets
-            virtual_ds_combined = xr.concat(
-                virtual_ds_list,
-                orbit_starttime_da,
-                coords=concat_coords,
-                compat='override',
-                combine_attrs='drop_conflicts'
-            )
+            else:
+
+                basetime_str = "1970-01-01T00:00:00"  # reference UTC
+
+                # Extract all beginning times and convert to NumPy datetime64 in seconds
+                raw_dates = [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'] for g in granule_info]
+                datetime_array = np.array(raw_dates, dtype='datetime64[s]')
+
+                # Compute timedeltas (seconds since basetime)
+                basetime_obj = np.datetime64(basetime_str, 's')
+                orbit_starttime_array = (datetime_array - basetime_obj).astype(int)
+
+                # Wrap in xarray.DataArray
+                orbit_starttime_da = xr.DataArray(
+                    data=orbit_starttime_array,
+                    name="orbit_segment_start_time",
+                    dims=["orbit_segment_start_time"],
+                    attrs={
+                        "units": f"seconds since {basetime_str}",
+                        "calendar": "gregorian",
+                    },
+                )
+
+                concat_coords = ["lat", "lon"]
+
+                # Concatenate with virtual datasets
+                virtual_ds_combined = xr.concat(
+                    virtual_ds_list,
+                    orbit_starttime_da,
+                    coords=concat_coords,
+                    compat='override',
+                    combine_attrs='drop_conflicts'
+                )
 
         else:
             virtual_ds_combined = xr.combine_nested(

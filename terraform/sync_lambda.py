@@ -56,7 +56,6 @@ def handler(event, context):
         
     elif mode == "delete_folder":
         deleted = _batch_delete(dest_bucket, dest_prefix)
-        
     else:
         return {"statusCode": 400, "body": f"Unknown mode: {mode}"}
 
