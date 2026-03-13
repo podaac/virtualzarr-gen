@@ -355,14 +355,14 @@ def main(
         try:
             client.close()
         except Exception as e:
-            logging.warning("Error closing Dask client: %s", e)
+            logging.info("Error closing Dask client")
 
         try:
             # Access the implicit cluster via client.cluster
             if client.cluster:
                 client.cluster.close(timeout=15)
         except TimeoutError:
-            logging.warning("Dask cluster shutdown timed out. Safely ignoring and continuing exit.")
+            logging.info("Dask cluster shutdown timed out. Safely ignoring and continuing exit.")
 
 
 def cli():

@@ -45,8 +45,10 @@ resource "aws_ecs_task_definition" "app" {
       "name": "cloud-optimization-generation",
       "image": var.image_name,
       "cpu": 0,
-      "memory": 629145,
-      "memoryReservation": 597687,
+      # Give the container a massive ceiling so it NEVER hits the "Hard Wall"
+      "memory": 700000, 
+      # Match your 6GB per CPU math for the reservation
+      "memoryReservation": 589824,
       "portMappings": [
         {
           "name": "workers",
@@ -66,7 +68,8 @@ resource "aws_ecs_task_definition" "app" {
         { "name": "SSM_EDL_PASSWORD", "value": "" },
         { "name": "CPU_COUNT", "value": "16" },
         { "name": "MEMORY_LIMIT", "value": "12GB" },
-        { "name": "BATCH_SIZE", "value": "48" }
+        { "name": "BATCH_SIZE", "value": "48" },
+        { "name": "STAGING_BUCKET", "value": "" },
       ],
       "logConfiguration": {
         "logDriver": "awslogs",

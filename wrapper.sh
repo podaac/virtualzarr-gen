@@ -3,9 +3,12 @@ set -euo pipefail  # Exit on error, undefined variables, pipe failures
 
 # Helper function to sync output files to S3
 sync_to_s3() {
-  aws s3 sync . "s3://$OUTPUT_BUCKET/virtual_collections/$COLLECTION/" --exclude "*" --include "*virtual*.json"
+  aws s3 sync . "s3://$OUTPUT_BUCKET/virtual_collections/$COLLECTION/" \
+    --exclude "*" --include "*virtual*.json" || echo "Primary bucket not found, skipping..."
+
   if [[ -n "${STAGING_BUCKET}" ]]; then
-    aws s3 sync . "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/" --exclude "*" --include "*virtual*.json"
+    aws s3 sync . "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/" \
+      --exclude "*" --include "*virtual*.json" || echo "Staging bucket not found, skipping..."
   fi
 }
 
