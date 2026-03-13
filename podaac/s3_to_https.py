@@ -17,6 +17,7 @@ BUCKET_TO_HOST = {
 
 DEFAULT_HOST = "archive.podaac.earthdata.nasa.gov"
 
+
 def setup_logging(debug=False):
     """
     Configure logging for the application.
@@ -31,10 +32,11 @@ def setup_logging(debug=False):
     if debug:
         logging.getLogger('urllib3').setLevel(logging.DEBUG)
 
+
 def translate_s3_to_https(s3_url):
     """
     Translates an S3 URL to its HTTPS equivalent based on the bucket name.
-    Example: s3://podaac-swot-ops-cumulus-protected/data.nc -> 
+    Example: s3://podaac-swot-ops-cumulus-protected/data.nc ->
              https://archive.swot.podaac.earthdata.nasa.gov/podaac-swot-ops-cumulus-protected/data.nc
     """
     if not s3_url.startswith('s3://'):
@@ -51,6 +53,7 @@ def translate_s3_to_https(s3_url):
     host = BUCKET_TO_HOST.get(bucket_name, DEFAULT_HOST)
 
     return f'https://{host}/{raw_path}'
+
 
 def translate_filesystem_references(text):
     """
@@ -87,6 +90,7 @@ def translate_filesystem_references(text):
 
     return text
 
+
 def process_kerchunk_refs(refs_dict):
     """
     Process a kerchunk refs dictionary and translate all S3 URLs to HTTPS.
@@ -111,6 +115,7 @@ def process_kerchunk_refs(refs_dict):
             updated_refs[key] = value
     return updated_refs
 
+
 def convert_kerchunk_file(input_file, output_file=None):
     """
     Convert a kerchunk JSON file from S3 URLs to HTTPS URLs.
@@ -131,6 +136,7 @@ def convert_kerchunk_file(input_file, output_file=None):
 
     logging.info("Converted %s -> %s", input_file, output_path)
 
+
 def cli():
     """Main function to handle command-line usage."""
     parser = argparse.ArgumentParser(description="Translate PODAAC S3 URLs to appropriate HTTPS endpoints (SWOT or Standard).")
@@ -145,6 +151,7 @@ def cli():
         print(translate_s3_to_https(args.input_file))
     else:
         convert_kerchunk_file(args.input_file, args.output_file)
+
 
 if __name__ == '__main__':
     cli()

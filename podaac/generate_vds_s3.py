@@ -38,6 +38,7 @@ def get_daac_from_s3_link(s3_link):
     # Fallback for standard PODAAC
     return "PODAAC"
 
+
 def print_memory_usage(note=""):
     """
     Log the current memory usage of the process.
