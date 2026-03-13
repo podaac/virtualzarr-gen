@@ -354,7 +354,7 @@ def main(
         logging.info("Shutting down Dask client and cluster...")
         try:
             client.close()
-        except Exception as e:
+        except Exception:
             logging.info("Error closing Dask client")
 
         try:
