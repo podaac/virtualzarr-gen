@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "virtualizarr-gen"
-version = "0.3.0a3"
+version = "0.3.0a2"
 description = "A project using zarr, xarray, dask, virtualizarr, kerchunk, etc."
 authors = ["podaac-tva <podaac-tva@jpl.nasa.gov>"]
 
@@ -13,16 +13,16 @@ python = "^3.12"
 
 zarr = "2.18.4"
 fastparquet = "2024.5.0"
-xarray = "2025.1.2"
+xarray = "2026.2.0"
 fsspec = "2026.2.0"
-dask = {version = "2024.5.2", extras = ["complete"]}
-h5netcdf = "1.3.0"
+dask = "2026.1.2"
+h5netcdf = "1.8.1"
 virtualizarr = "1.3.2"
 numcodecs = "0.15.1"
 kerchunk = "0.2.7"
 boto3 = "*"
 earthaccess = "0.16.0"
-distributed = "2024.5.2"
+distributed = "2026.1.2"
 
 papermill = "*"
 ipykernel = "*"
