@@ -265,7 +265,7 @@ def main(
 
             if collection == "SWOT_L2_LR_SSH_Basic_2.0":
 
-                orbit_start = [np.datetime64(g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'], 'ns') 
+                orbit_start = [np.datetime64(g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'], 'ns')
                                for g in granule_info[:len(data_s3links)]]
 
                 # Sort by orbits so they algin monotonically in time and every else too.
