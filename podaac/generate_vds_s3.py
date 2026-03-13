@@ -29,6 +29,16 @@ from dask.distributed import Client
 import pandas as pd
 
 
+def get_daac_from_s3_link(s3_link):
+    """
+    Identifies the correct DAAC/Provider string for earthaccess based on S3 bucket.
+    """
+    if "swot" in s3_link:
+        return "SWOT"
+    # Fallback for standard PODAAC
+    return "PODAAC"
+
+
 def print_memory_usage(note=""):
     """
     Log the current memory usage of the process.
@@ -112,9 +122,14 @@ def process_in_batches(data_s3links, coord_vars, client, batch_size=48):
         logging.info("Processing batch %d of %d (%d files)",
                      batch_num, total_batches, len(batch))
 
+        daac_name = get_daac_from_s3_link(batch[0])
+
         # Explicitly refresh the session and tokens to avoid the 1-hour timeout
         earthaccess.login()
-        fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+        if daac_name == "PODAAC":
+            fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+        else:
+            fs = earthaccess.get_s3_filesystem(endpoint="https://archive.swot.podaac.earthdata.nasa.gov/s3credentials")
         reader_opts = {"storage_options": fs.storage_options}
 
         # Dispatch tasks to workers with the freshly minted credentials
@@ -324,7 +339,12 @@ def main(
         logging.info("Saved: %s", fname_combined_json)
 
         # Test lazy loading of the combined reference file
-        fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+        daac_name = get_daac_from_s3_link(data_s3links[0])
+        earthaccess.login()
+        if daac_name == "PODAAC":
+            fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+        else:
+            fs = earthaccess.get_s3_filesystem(endpoint="https://archive.swot.podaac.earthdata.nasa.gov/s3credentials")
         data_json = opends_withref(fname_combined_json, fs)
         logging.info("Test open with combined reference file: %s", data_json)
 
