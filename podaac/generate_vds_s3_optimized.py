@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # pylint: disable=too-many-statements, too-many-branches
+# pylint: disable=R0801
 """
 Generate Cloud Optimized Store Reference Files for Earthdata collections.
 

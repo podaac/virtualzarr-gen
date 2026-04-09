@@ -18,6 +18,7 @@ import sys
 import argparse
 import logging
 import multiprocessing
+from pathlib import Path
 import psutil
 
 import fsspec
@@ -256,7 +257,7 @@ def main(
 
     logging.info("Found %d data files.", len(data_s3links))
     coord_vars = [] if level_2_data else loadable_coord_vars.split(",")
-    if collection == "SWOT_L2_LR_SSH_Basic_2.0" or collection == "SWOT_L2_LR_SSH_Basic_D":
+    if collection in {"SWOT_L2_LR_SSH_Basic_2.0", "SWOT_L2_LR_SSH_Basic_D"}:
         coord_vars = ["num_lines", "num_pixels"]
 
     # Parallel reference creation for all files using Dask Client
@@ -305,18 +306,18 @@ def main(
                         g['umm']['SpatialExtent']['HorizontalSpatialDomain']['Track']['Passes'][0]['Pass'],
                         Path(g.data_links(access="https")[0]).name
                     )
-                    for g in granule_info[:len(data_links)]
+                    for g in granule_info[:len(virtual_ds_list)]
                 ]
                 orbit_start, cycle_num, pass_num, file_list = map(list, zip(*results))
                 granule_index = np.arange(len(virtual_ds_list))
 
-                coords_list = ['latitude', 'longitude' ]
+                coords_list = ['latitude', 'longitude']
                 virtual_ds_combined = xr.concat(
                     virtual_ds_list,
                     dim="granule",
                     coords=coords_list,
                     compat='override',
-                    combine_attrs='drop_conflicts'   
+                    combine_attrs='drop_conflicts'
                 )
 
                 virtual_ds_combined = virtual_ds_combined.assign_coords(
