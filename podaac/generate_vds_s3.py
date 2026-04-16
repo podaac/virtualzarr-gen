@@ -18,6 +18,7 @@ import sys
 import argparse
 import logging
 import multiprocessing
+from pathlib import Path
 import psutil
 
 import fsspec
@@ -226,6 +227,18 @@ def main(
             temporal=("2024-01-25", "2025-05-03"),
         )
         granule_info = granule_info_1 + granule_info_2
+    elif collection == "SWOT_L2_LR_SSH_Basic_D":
+        granule_info_1 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_Basic_D",
+            granule_name="SWOT_L2_LR_SSH_Basic*PGD*.nc",
+            temporal=("2023-07-26", "2025-04-08"),
+        )
+        granule_info_2 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_Basic_D",
+            granule_name="SWOT_L2_LR_SSH_Basic*PID*.nc",
+            temporal=("2025-05-06", "2027-01-01"),
+        )
+        granule_info = granule_info_1 + granule_info_2
     else:
         if temporal:
             logging.info("Searching granules with temporal filter - start_date: %s, end_date: %s", start_date, end_date)
@@ -244,7 +257,7 @@ def main(
 
     logging.info("Found %d data files.", len(data_s3links))
     coord_vars = [] if level_2_data else loadable_coord_vars.split(",")
-    if collection == "SWOT_L2_LR_SSH_Basic_2.0":
+    if collection in {"SWOT_L2_LR_SSH_Basic_2.0", "SWOT_L2_LR_SSH_Basic_D"}:
         coord_vars = ["num_lines", "num_pixels"]
 
     # Parallel reference creation for all files using Dask Client
@@ -282,6 +295,37 @@ def main(
                     coords=coords_list,
                     compat='override',
                     combine_attrs='drop_conflicts'
+                )
+
+            elif collection == "SWOT_L2_LR_SSH_Basic_D":
+
+                results = [
+                    (
+                        np.datetime64(g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime']),
+                        g['umm']['SpatialExtent']['HorizontalSpatialDomain']['Track']['Cycle'],
+                        g['umm']['SpatialExtent']['HorizontalSpatialDomain']['Track']['Passes'][0]['Pass'],
+                        Path(g.data_links(access="https")[0]).name
+                    )
+                    for g in granule_info[:len(virtual_ds_list)]
+                ]
+                orbit_start, cycle_num, pass_num, file_list = map(list, zip(*results))
+                granule_index = np.arange(len(virtual_ds_list))
+
+                coords_list = ['latitude', 'longitude']
+                virtual_ds_combined = xr.concat(
+                    virtual_ds_list,
+                    dim="granule",
+                    coords=coords_list,
+                    compat='override',
+                    combine_attrs='drop_conflicts'
+                )
+
+                virtual_ds_combined = virtual_ds_combined.assign_coords(
+                    granule=("granule", granule_index),
+                    orbit=("granule", orbit_start),
+                    cycle=("granule", cycle_num),
+                    ppass=("granule", pass_num),
+                    filename=("granule", file_list)
                 )
 
             else:
