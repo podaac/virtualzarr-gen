@@ -281,7 +281,7 @@ def main(
                 orbit_start = [np.datetime64(g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'], 'ns')
                                for g in granule_info[:len(data_s3links)]]
 
-                # Sort by orbits so they algin monotonically in time and every else too.
+                # Sort by orbits so they align monotonically in time and every else too.
                 pairs = sorted(zip(orbit_start, virtual_ds_list), key=lambda x: x[0])
                 orbit_start_sorted, virtual_ds_list_sorted = zip(*pairs)
 
