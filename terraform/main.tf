@@ -47,7 +47,7 @@ resource "aws_ecs_task_definition" "app" {
       "cpu": 0,
       # Give the container a massive ceiling so it NEVER hits the "Hard Wall"
       "memory": 700000, 
-      # Match your 6GB per CPU math for the reservation
+      # Set a high reservation to reduce the chance of OOM kills on large collections
       "memoryReservation": 589824,
       "portMappings": [
         {

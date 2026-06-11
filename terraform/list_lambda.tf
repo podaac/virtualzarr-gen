@@ -8,7 +8,7 @@ resource "aws_lambda_function" "s3_list" {
   function_name = "virtualizarr-${var.stage}-s3-bucket-list"
   role          = aws_iam_role.app_task_exec.arn
 
-  handler = "list_lambda.handler"
+  handler = "list_lambda.lambda_handler"
   runtime = "python3.12"
   layers  = ["arn:aws:lambda:us-west-2:336392948345:layer:AWSSDKPandas-Python312:22"]
 
