@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 ### Added
+### Changed
+### Deprecated 
+### Removed
+### Fixed
+### Security
+
+
+## [0.3.0]
+### Added
 - [issue/14] (https://github.com/podaac/virtualzarr-gen/issues/14): Integrate new SWOT D notebook into production
 ### Changed
 ### Deprecated 
