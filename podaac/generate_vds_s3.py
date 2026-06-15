@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# pylint: disable=too-many-statements
+# pylint: disable=too-many-statements, too-many-branches
 """
 Generate Cloud Optimized Store Reference Files for Earthdata collections.
 
@@ -18,6 +18,7 @@ import sys
 import argparse
 import logging
 import multiprocessing
+from pathlib import Path
 import psutil
 
 import fsspec
@@ -26,6 +27,17 @@ import xarray as xr
 from virtualizarr import open_virtual_dataset
 import numpy as np
 from dask.distributed import Client
+import pandas as pd
+
+
+def get_daac_from_s3_link(s3_link):
+    """
+    Identifies the correct DAAC/Provider string for earthaccess based on S3 bucket.
+    """
+    if "swot" in s3_link:
+        return "SWOT"
+    # Fallback for standard PODAAC
+    return "PODAAC"
 
 
 def print_memory_usage(note=""):
@@ -111,9 +123,14 @@ def process_in_batches(data_s3links, coord_vars, client, batch_size=48):
         logging.info("Processing batch %d of %d (%d files)",
                      batch_num, total_batches, len(batch))
 
+        daac_name = get_daac_from_s3_link(batch[0])
+
         # Explicitly refresh the session and tokens to avoid the 1-hour timeout
         earthaccess.login()
-        fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+        if daac_name == "PODAAC":
+            fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+        else:
+            fs = earthaccess.get_s3_filesystem(endpoint="https://archive.swot.podaac.earthdata.nasa.gov/s3credentials")
         reader_opts = {"storage_options": fs.storage_options}
 
         # Dispatch tasks to workers with the freshly minted credentials
@@ -195,19 +212,44 @@ def main(
     # Earthdata login
     earthaccess.login()
 
-    # Search for granules
     temporal = (start_date, end_date) if (is_valid_date(start_date) or is_valid_date(end_date)) else None
 
-    if temporal:
-        logging.info("Searching granules with temporal filter - start_date: %s, end_date: %s", start_date, end_date)
-        granule_info = earthaccess.search_data(short_name=collection, temporal=temporal)
+    # Search for granules
+    if collection == "SWOT_L2_LR_SSH_Basic_2.0":
+        granule_info_1 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_Basic_2.0",
+            granule_name="SWOT_L2_LR_SSH_Basic*PGC*.nc",
+            temporal=("2023-07-26", "2024-01-24"),
+        )
+        granule_info_2 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_Basic_2.0",
+            granule_name="SWOT_L2_LR_SSH_Basic*PIC*.nc",
+            temporal=("2024-01-25", "2025-05-03"),
+        )
+        granule_info = granule_info_1 + granule_info_2
+    elif collection == "SWOT_L2_LR_SSH_Basic_D":
+        granule_info_1 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_Basic_D",
+            granule_name="SWOT_L2_LR_SSH_Basic*PGD*.nc",
+            temporal=("2023-07-26", "2025-04-08"),
+        )
+        granule_info_2 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_Basic_D",
+            granule_name="SWOT_L2_LR_SSH_Basic*PID*.nc",
+            temporal=("2025-05-06", "2027-01-01"),
+        )
+        granule_info = granule_info_1 + granule_info_2
     else:
-        logging.info("Getting all granules...")
-        granule_info = earthaccess.search_data(short_name=collection)
+        if temporal:
+            logging.info("Searching granules with temporal filter - start_date: %s, end_date: %s", start_date, end_date)
+            granule_info = earthaccess.search_data(short_name=collection, temporal=temporal)
+        else:
+            logging.info("Getting all granules...")
+            granule_info = earthaccess.search_data(short_name=collection)
 
-    if not granule_info:
-        logging.warning("No granules found matching criteria. Exiting.")
-        sys.exit(0)
+        if not granule_info:
+            logging.warning("No granules found matching criteria. Exiting.")
+            sys.exit(0)
 
     # Get S3 links
     logging.info("Found %d granules.", len(granule_info))
@@ -215,6 +257,8 @@ def main(
 
     logging.info("Found %d data files.", len(data_s3links))
     coord_vars = [] if level_2_data else loadable_coord_vars.split(",")
+    if collection in {"SWOT_L2_LR_SSH_Basic_2.0", "SWOT_L2_LR_SSH_Basic_D"}:
+        coord_vars = ["num_lines", "num_pixels"]
 
     # Parallel reference creation for all files using Dask Client
     logging.info("CPU count = %d", multiprocessing.cpu_count())
@@ -232,37 +276,91 @@ def main(
         virtual_ds_combined = None
         if level_2_data:
 
-            basetime_str = "1970-01-01T00:00:00"  # reference UTC
+            if collection == "SWOT_L2_LR_SSH_Basic_2.0":
 
-            # Extract all beginning times and convert to NumPy datetime64 in seconds
-            raw_dates = [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'] for g in granule_info]
-            datetime_array = np.array(raw_dates, dtype='datetime64[s]')
+                orbit_start = [np.datetime64(g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'], 'ns')
+                               for g in granule_info[:len(data_s3links)]]
 
-            # Compute timedeltas (seconds since basetime)
-            basetime_obj = np.datetime64(basetime_str, 's')
-            orbit_starttime_array = (datetime_array - basetime_obj).astype(int)
+                # Sort by orbits so they align monotonically in time and every else too.
+                pairs = sorted(zip(orbit_start, virtual_ds_list), key=lambda x: x[0])
+                orbit_start_sorted, virtual_ds_list_sorted = zip(*pairs)
 
-            # Wrap in xarray.DataArray
-            orbit_starttime_da = xr.DataArray(
-                data=orbit_starttime_array,
-                name="orbit_segment_start_time",
-                dims=["orbit_segment_start_time"],
-                attrs={
-                    "units": f"seconds since {basetime_str}",
-                    "calendar": "gregorian",
-                },
-            )
+                # Create panda list for better management and naming
+                orbit_start_sorted = pd.Index(orbit_start_sorted, name="orbit")
 
-            concat_coords = ["lat", "lon"]
+                coords_list = ['latitude', 'longitude']
+                virtual_ds_combined = xr.concat(
+                    virtual_ds_list_sorted,
+                    orbit_start_sorted,
+                    coords=coords_list,
+                    compat='override',
+                    combine_attrs='drop_conflicts'
+                )
 
-            # Concatenate with virtual datasets
-            virtual_ds_combined = xr.concat(
-                virtual_ds_list,
-                orbit_starttime_da,
-                coords=concat_coords,
-                compat='override',
-                combine_attrs='drop_conflicts'
-            )
+            elif collection == "SWOT_L2_LR_SSH_Basic_D":
+
+                results = [
+                    (
+                        np.datetime64(g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime']),
+                        g['umm']['SpatialExtent']['HorizontalSpatialDomain']['Track']['Cycle'],
+                        g['umm']['SpatialExtent']['HorizontalSpatialDomain']['Track']['Passes'][0]['Pass'],
+                        Path(g.data_links(access="https")[0]).name
+                    )
+                    for g in granule_info[:len(virtual_ds_list)]
+                ]
+                orbit_start, cycle_num, pass_num, file_list = map(list, zip(*results))
+                granule_index = np.arange(len(virtual_ds_list))
+
+                coords_list = ['latitude', 'longitude']
+                virtual_ds_combined = xr.concat(
+                    virtual_ds_list,
+                    dim="granule",
+                    coords=coords_list,
+                    compat='override',
+                    combine_attrs='drop_conflicts'
+                )
+
+                virtual_ds_combined = virtual_ds_combined.assign_coords(
+                    granule=("granule", granule_index),
+                    orbit=("granule", orbit_start),
+                    cycle=("granule", cycle_num),
+                    ppass=("granule", pass_num),
+                    filename=("granule", file_list)
+                )
+
+            else:
+
+                basetime_str = "1970-01-01T00:00:00"  # reference UTC
+
+                # Extract all beginning times and convert to NumPy datetime64 in seconds
+                raw_dates = [g['umm']['TemporalExtent']['RangeDateTime']['BeginningDateTime'] for g in granule_info]
+                datetime_array = np.array(raw_dates, dtype='datetime64[s]')
+
+                # Compute timedeltas (seconds since basetime)
+                basetime_obj = np.datetime64(basetime_str, 's')
+                orbit_starttime_array = (datetime_array - basetime_obj).astype(int)
+
+                # Wrap in xarray.DataArray
+                orbit_starttime_da = xr.DataArray(
+                    data=orbit_starttime_array,
+                    name="orbit_segment_start_time",
+                    dims=["orbit_segment_start_time"],
+                    attrs={
+                        "units": f"seconds since {basetime_str}",
+                        "calendar": "gregorian",
+                    },
+                )
+
+                concat_coords = ["lat", "lon"]
+
+                # Concatenate with virtual datasets
+                virtual_ds_combined = xr.concat(
+                    virtual_ds_list,
+                    orbit_starttime_da,
+                    coords=concat_coords,
+                    compat='override',
+                    combine_attrs='drop_conflicts'
+                )
 
         else:
             virtual_ds_combined = xr.combine_nested(
@@ -286,7 +384,12 @@ def main(
         logging.info("Saved: %s", fname_combined_json)
 
         # Test lazy loading of the combined reference file
-        fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+        daac_name = get_daac_from_s3_link(data_s3links[0])
+        earthaccess.login()
+        if daac_name == "PODAAC":
+            fs = earthaccess.get_s3_filesystem(daac="PODAAC")
+        else:
+            fs = earthaccess.get_s3_filesystem(endpoint="https://archive.swot.podaac.earthdata.nasa.gov/s3credentials")
         data_json = opends_withref(fname_combined_json, fs)
         logging.info("Test open with combined reference file: %s", data_json)
 
@@ -295,15 +398,15 @@ def main(
         logging.info("Shutting down Dask client and cluster...")
         try:
             client.close()
-        except Exception as e:
-            logging.warning("Error closing Dask client: %s", e)
+        except Exception:
+            logging.info("Error closing Dask client")
 
         try:
             # Access the implicit cluster via client.cluster
             if client.cluster:
                 client.cluster.close(timeout=15)
         except TimeoutError:
-            logging.warning("Dask cluster shutdown timed out. Safely ignoring and continuing exit.")
+            logging.info("Dask cluster shutdown timed out. Safely ignoring and continuing exit.")
 
 
 def cli():

@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 
+## [0.3.0]
+### Added
+- [issue/14] (https://github.com/podaac/virtualzarr-gen/issues/14): Integrate new SWOT D notebook into production
+### Changed
+### Deprecated 
+### Removed
+### Fixed
+### Security
+
+
 ## [0.2.0]
 ### Added
 - Added AWS bucket sync lambda

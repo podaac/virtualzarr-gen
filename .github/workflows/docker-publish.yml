@@ -51,7 +51,7 @@ jobs:
           if [[ "${{ github.ref }}" =~ ^refs/heads/(issue|feature|dependabot)/ ]]; then
             TIMESTAMP=$(date -u +"%Y%m%d%H%M")
             new_version="${base_version}a${TIMESTAMP}"
-            echo "TARGET_ENV_UPPERCASE=DEVELOPMENT" >> $GITHUB_ENV
+            echo "TARGET_ENV_UPPERCASE=SIT" >> $GITHUB_ENV
           elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
             echo "TARGET_ENV_UPPERCASE=SIT" >> $GITHUB_ENV
             new_version=$(poetry version prerelease -s)
