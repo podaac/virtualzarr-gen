@@ -147,6 +147,11 @@ def process_in_batches(data_s3links, coord_vars, client, batch_size=48):
         batch_results = client.gather(futures)
         virtual_ds_list.extend(batch_results)
 
+        # Restart workers every 3 batches to reclaim C-level memory fragmentation
+        if batch_num % 3 == 0 and batch_num < total_batches:
+            logging.info("Restarting Dask workers to reclaim memory...")
+            client.restart()
+
     return virtual_ds_list
 
 
