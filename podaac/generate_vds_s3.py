@@ -239,6 +239,17 @@ def main(
             temporal=("2025-05-06", "2027-01-01"),
         )
         granule_info = granule_info_1 + granule_info_2
+    elif collection == "SWOT_L2_LR_SSH_EXPERT_D":
+        granule_info_1 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_EXPERT_D",
+            granule_name="SWOT_L2_LR_SSH_EXPERT_D*PGD*.nc",
+            temporal=("2023-07-26", "2025-04-08"),
+        )
+        granule_info_2 = earthaccess.search_data(
+            short_name="SWOT_L2_LR_SSH_EXPERT_D",
+            granule_name="SWOT_L2_LR_SSH_EXPERT_D*PID*.nc",
+            temporal=("2025-05-06", "2027-01-01"),
+        )
     else:
         if temporal:
             logging.info("Searching granules with temporal filter - start_date: %s, end_date: %s", start_date, end_date)
@@ -257,7 +268,7 @@ def main(
 
     logging.info("Found %d data files.", len(data_s3links))
     coord_vars = [] if level_2_data else loadable_coord_vars.split(",")
-    if collection in {"SWOT_L2_LR_SSH_Basic_2.0", "SWOT_L2_LR_SSH_Basic_D"}:
+    if collection in {"SWOT_L2_LR_SSH_Basic_2.0", "SWOT_L2_LR_SSH_Basic_D", "SWOT_L2_LR_SSH_EXPERT_D"}:
         coord_vars = ["num_lines", "num_pixels"]
 
     # Parallel reference creation for all files using Dask Client
@@ -297,7 +308,7 @@ def main(
                     combine_attrs='drop_conflicts'
                 )
 
-            elif collection == "SWOT_L2_LR_SSH_Basic_D":
+            elif collection == "SWOT_L2_LR_SSH_Basic_D" or collection == "SWOT_L2_LR_SSH_EXPERT_D":
 
                 results = [
                     (
