@@ -268,7 +268,7 @@ def main(
 
     logging.info("Found %d data files.", len(data_s3links))
     coord_vars = [] if level_2_data else loadable_coord_vars.split(",")
-    if collection in {"SWOT_L2_LR_SSH_Basic_2.0", "SWOT_L2_LR_SSH_Basic_D", "SWOT_L2_LR_SSH_EXPERT_D"}:
+    if collection in ["SWOT_L2_LR_SSH_Basic_2.0", "SWOT_L2_LR_SSH_Basic_D", "SWOT_L2_LR_SSH_EXPERT_D"]:
         coord_vars = ["num_lines", "num_pixels"]
 
     # Parallel reference creation for all files using Dask Client
@@ -308,7 +308,7 @@ def main(
                     combine_attrs='drop_conflicts'
                 )
 
-            elif collection == "SWOT_L2_LR_SSH_Basic_D" or collection == "SWOT_L2_LR_SSH_EXPERT_D":
+            elif collection in ["SWOT_L2_LR_SSH_Basic_D", "SWOT_L2_LR_SSH_EXPERT_D"]:
 
                 results = [
                     (
