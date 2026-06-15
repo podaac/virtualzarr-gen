@@ -251,7 +251,7 @@ resource "aws_autoscaling_group" "app-ag" {
   name                   = "${local.resource_prefix}-app-asg"
   vpc_zone_identifier    = [for subnet in data.aws_subnet.private_application_subnet: subnet.id]
   desired_capacity       = 0
-  max_size               = 2
+  max_size               = 1
   min_size               = 0
   protect_from_scale_in  = false
 
