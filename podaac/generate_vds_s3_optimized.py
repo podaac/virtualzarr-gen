@@ -188,6 +188,34 @@ def process_in_batches(data_s3links, coord_vars, client, batch_size=48):
     return virtual_ds_list
 
 
+def _log_granule_mismatches(virtual_ds_list, file_list):
+    """Log dimension size and dtype mismatches across granules to help debug concat failures."""
+    if not virtual_ds_list:
+        return
+    ref_ds = virtual_ds_list[0]
+    for var_name in ref_ds.variables:
+        ref_dtype = ref_ds[var_name].dtype
+        ref_dims = ref_ds[var_name].dims
+        ref_shape = ref_ds[var_name].shape
+        for i, ds in enumerate(virtual_ds_list[1:], start=1):
+            if var_name not in ds.variables:
+                logging.warning(
+                    "Variable '%s' missing in granule %d: %s", var_name, i, file_list[i]
+                )
+                continue
+            v = ds[var_name]
+            if v.dtype != ref_dtype:
+                logging.warning(
+                    "Variable '%s' dtype mismatch: %s in granule 0 (%s) vs %s in granule %d (%s)",
+                    var_name, ref_dtype, file_list[0], v.dtype, i, file_list[i],
+                )
+            if v.dims == ref_dims and v.shape != ref_shape:
+                logging.warning(
+                    "Variable '%s' shape mismatch: %s in granule 0 (%s) vs %s in granule %d (%s)",
+                    var_name, ref_shape, file_list[0], v.shape, i, file_list[i],
+                )
+
+
 def combine_level_2(collection, granule_info, virtual_ds_list):
     """Combine level-2 virtual datasets using collection-specific coordinate logic."""
     if collection == "SWOT_L2_LR_SSH_Basic_2.0":
@@ -199,6 +227,9 @@ def combine_level_2(collection, granule_info, virtual_ds_list):
         pairs = sorted(zip(orbit_start, virtual_ds_list), key=lambda item: item[0])
         orbit_start_sorted, virtual_ds_list_sorted = zip(*pairs)
         orbit_idx = pd.Index(orbit_start_sorted, name="orbit")
+
+        file_names = [Path(g.data_links(access="https")[0]).name for g in granule_info[: len(virtual_ds_list)]]
+        _log_granule_mismatches(list(virtual_ds_list_sorted), file_names)
 
         return xr.concat(
             virtual_ds_list_sorted,
@@ -223,6 +254,8 @@ def combine_level_2(collection, granule_info, virtual_ds_list):
             for g in granules
         ]
         file_list = [Path(g.data_links(access="https")[0]).name for g in granules]
+
+        _log_granule_mismatches(virtual_ds_list, file_list)
 
         combined = xr.concat(
             virtual_ds_list,
@@ -258,6 +291,9 @@ def combine_level_2(collection, granule_info, virtual_ds_list):
             "calendar": "gregorian",
         },
     )
+
+    file_names = [Path(g.data_links(access="https")[0]).name for g in granule_info[: len(virtual_ds_list)]]
+    _log_granule_mismatches(virtual_ds_list, file_names)
 
     return xr.concat(
         virtual_ds_list,
