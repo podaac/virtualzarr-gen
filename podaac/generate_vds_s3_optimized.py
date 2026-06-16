@@ -55,12 +55,12 @@ SPECIAL_COLLECTION_SEARCHES = {
     "SWOT_L2_LR_SSH_EXPERT_D": [
         {
             "short_name": "SWOT_L2_LR_SSH_EXPERT_D",
-            "granule_name": "SWOT_L2_LR_SSH_EXPERT_D*PGD*.nc",
+            "granule_name": "SWOT_L2_LR_SSH_EXPERT*PGD*.nc",
             "temporal": ("2023-07-26", "2025-04-08"),
         },
         {
             "short_name": "SWOT_L2_LR_SSH_EXPERT_D",
-            "granule_name": "SWOT_L2_LR_SSH_EXPERT_D*PID*.nc",
+            "granule_name": "SWOT_L2_LR_SSH_EXPERT*PID*.nc",
             "temporal": ("2025-05-06", "2027-01-01"),
         },
     ],
