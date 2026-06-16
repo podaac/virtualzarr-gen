@@ -25,7 +25,7 @@ from dask.distributed import Client
 from virtualizarr import open_virtual_dataset
 
 SWOT_ENDPOINT = "https://archive.swot.podaac.earthdata.nasa.gov/s3credentials"
-SPECIAL_COLLECTION_COORDS = {"SWOT_L2_LR_SSH_Basic_2.0", "SWOT_L2_LR_SSH_Basic_D"}
+SPECIAL_COLLECTION_COORDS = {"SWOT_L2_LR_SSH_Basic_2.0", "SWOT_L2_LR_SSH_Basic_D", "SWOT_L2_LR_SSH_EXPERT_D"}
 
 SPECIAL_COLLECTION_SEARCHES = {
     "SWOT_L2_LR_SSH_Basic_2.0": [
@@ -49,6 +49,18 @@ SPECIAL_COLLECTION_SEARCHES = {
         {
             "short_name": "SWOT_L2_LR_SSH_Basic_D",
             "granule_name": "SWOT_L2_LR_SSH_Basic*PID*.nc",
+            "temporal": ("2025-05-06", "2027-01-01"),
+        },
+    ],
+    "SWOT_L2_LR_SSH_EXPERT_D": [
+        {
+            "short_name": "SWOT_L2_LR_SSH_EXPERT_D",
+            "granule_name": "SWOT_L2_LR_SSH_EXPERT_D*PGD*.nc",
+            "temporal": ("2023-07-26", "2025-04-08"),
+        },
+        {
+            "short_name": "SWOT_L2_LR_SSH_EXPERT_D",
+            "granule_name": "SWOT_L2_LR_SSH_EXPERT_D*PID*.nc",
             "temporal": ("2025-05-06", "2027-01-01"),
         },
     ],
@@ -196,7 +208,7 @@ def combine_level_2(collection, granule_info, virtual_ds_list):
             combine_attrs="drop_conflicts",
         )
 
-    if collection == "SWOT_L2_LR_SSH_Basic_D":
+    if collection in ("SWOT_L2_LR_SSH_Basic_D", "SWOT_L2_LR_SSH_EXPERT_D"):
         granules = granule_info[: len(virtual_ds_list)]
         orbit_start = [
             np.datetime64(g["umm"]["TemporalExtent"]["RangeDateTime"]["BeginningDateTime"], "ns")
@@ -324,6 +336,25 @@ def main(
         print_memory_usage("After per-granule virtualization")
 
         logging.info("Combining references...")
+        dim_sizes = {}
+        for i, ds in enumerate(virtual_ds_list):
+            for dim, size in ds.sizes.items():
+                dim_sizes.setdefault(dim, {}).setdefault(size, []).append(i)
+        for dim, sizes in dim_sizes.items():
+            if len(sizes) > 1:
+                logging.warning(
+                    "Dimension '%s' has conflicting sizes across granules:", dim
+                )
+                for size, indices in sizes.items():
+                    sample_links = [data_s3links[i] for i in indices[:5]]
+                    logging.warning(
+                        "  size=%d in %d granule(s): %s%s",
+                        size,
+                        len(indices),
+                        sample_links,
+                        " ..." if len(indices) > 5 else "",
+                    )
+
         if level_2_data:
             virtual_ds_combined = combine_level_2(collection, granule_info, virtual_ds_list)
         else:
