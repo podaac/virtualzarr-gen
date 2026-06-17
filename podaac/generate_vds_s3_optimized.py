@@ -190,6 +190,7 @@ def process_in_batches(data_s3links, coord_vars, client, batch_size=48):
 
 def _log_granule_mismatches(virtual_ds_list, file_list):
     """Log dimension size and dtype mismatches across granules to help debug concat failures."""
+    logging.info("Checking for variable mismatches across granules...")
     if not virtual_ds_list:
         return
     ref_ds = virtual_ds_list[0]
@@ -199,18 +200,18 @@ def _log_granule_mismatches(virtual_ds_list, file_list):
         ref_shape = ref_ds[var_name].shape
         for i, ds in enumerate(virtual_ds_list[1:], start=1):
             if var_name not in ds.variables:
-                logging.warning(
+                logging.info(
                     "Variable '%s' missing in granule %d: %s", var_name, i, file_list[i]
                 )
                 continue
             v = ds[var_name]
             if v.dtype != ref_dtype:
-                logging.warning(
+                logging.info(
                     "Variable '%s' dtype mismatch: %s in granule 0 (%s) vs %s in granule %d (%s)",
                     var_name, ref_dtype, file_list[0], v.dtype, i, file_list[i],
                 )
             if v.dims == ref_dims and v.shape != ref_shape:
-                logging.warning(
+                logging.info(
                     "Variable '%s' shape mismatch: %s in granule 0 (%s) vs %s in granule %d (%s)",
                     var_name, ref_shape, file_list[0], v.shape, i, file_list[i],
                 )
