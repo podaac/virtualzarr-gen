@@ -258,13 +258,32 @@ def combine_level_2(collection, granule_info, virtual_ds_list):
 
         _log_granule_mismatches(virtual_ds_list, file_list)
 
-        combined = xr.concat(
-            virtual_ds_list,
-            dim="granule",
-            coords=["latitude", "longitude"],
-            compat="override",
-            combine_attrs="drop_conflicts",
-        )
+        logging.info("Concatenating %d granules incrementally to find failures...", len(virtual_ds_list))
+        combined = virtual_ds_list[0].expand_dims("granule")
+        for i in range(1, len(virtual_ds_list)):
+            try:
+                combined = xr.concat(
+                    [combined, virtual_ds_list[i].expand_dims("granule")],
+                    dim="granule",
+                    coords=["latitude", "longitude"],
+                    compat="override",
+                    combine_attrs="drop_conflicts",
+                )
+            except Exception as e:
+                logging.error(
+                    "Concat failed at granule %d: %s — file: %s",
+                    i, e, file_list[i],
+                )
+                logging.error(
+                    "Granule %d vars/dtypes: %s",
+                    i,
+                    {v: (virtual_ds_list[i][v].dtype, virtual_ds_list[i][v].shape) for v in virtual_ds_list[i].variables},
+                )
+                logging.error(
+                    "Current combined vars/dtypes: %s",
+                    {v: (combined[v].dtype, combined[v].shape) for v in combined.variables},
+                )
+                raise
         granule_index = np.arange(len(virtual_ds_list))
         return combined.assign_coords(
             granule=("granule", granule_index),
