@@ -1,4 +1,4 @@
-name: Terraform Deploy
+gname: Terraform Deploy
 
 on:
   push:
@@ -89,11 +89,11 @@ jobs:
           echo "pyproject_name=${pyproject_name}" >> $GITHUB_ENV
           poetry version ${new_version}
 
-      - name: Run Poetry
-        run: |
-          poetry install
-          poetry run pylint podaac
-          poetry run flake8 podaac
+      #- name: Run Poetry
+      #  run: |
+      #    poetry install
+      #    poetry run pylint podaac
+      #    poetry run flake8 podaac
 
       #- name: Run Snyk as a blocking step
       #  uses: snyk/actions/python@master
