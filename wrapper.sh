@@ -63,10 +63,14 @@ if [[ -n "$endDate" ]]; then
   cmd_args+=(--end-date "$endDate")
 fi
 
-generate-vds-s3 "${cmd_args[@]}"
-
-sync_to_s3
-
-translate_all_s3_to_https
-
-sync_to_s3
+if [[ "${ENGINE:-kerchunk}" == "icechunk" ]]; then
+  source /opt/venv-icechunk/bin/activate
+  generate-vds-icechunk "${cmd_args[@]}"
+  sync_to_s3
+else
+  source /opt/venv-kerchunk/bin/activate
+  generate-vds-s3 "${cmd_args[@]}"
+  sync_to_s3
+  translate_all_s3_to_https
+  sync_to_s3
+fi
