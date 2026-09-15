@@ -26,7 +26,7 @@ RUN python -m venv /opt/venv-icechunk && \
     /opt/venv-icechunk/bin/pip install --no-deps -e .
 
 COPY wrapper.sh ./
-COPY vds_basic_L2_dummytime_prod.ipynb ./
+# COPY vds_basic_L2_dummytime_prod.ipynb ./
 
 RUN chmod 755 wrapper.sh
 
