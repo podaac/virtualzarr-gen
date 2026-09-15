@@ -63,10 +63,20 @@ if [[ -n "$endDate" ]]; then
   cmd_args+=(--end-date "$endDate")
 fi
 
+sync_tars_to_s3() {
+  aws s3 sync . "s3://$OUTPUT_BUCKET/virtual_collections/$COLLECTION/" \
+    --exclude "*" --include "*.tar" || echo "Primary bucket tar upload failed, skipping..."
+
+  if [[ -n "${STAGING_BUCKET}" ]]; then
+    aws s3 sync . "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/" \
+      --exclude "*" --include "*.tar" || echo "Staging bucket tar upload failed, skipping..."
+  fi
+}
+
 if [[ "${ENGINE:-kerchunk}" == "icechunk" ]]; then
   source /opt/venv-icechunk/bin/activate
   generate-vds-icechunk "${cmd_args[@]}"
-  sync_to_s3
+  sync_tars_to_s3
 else
   source /opt/venv-kerchunk/bin/activate
   generate-vds-s3 "${cmd_args[@]}"
