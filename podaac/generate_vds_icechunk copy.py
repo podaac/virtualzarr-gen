@@ -10,7 +10,6 @@ import argparse
 import logging
 import multiprocessing
 import os
-import re
 import subprocess
 import sys
 import warnings
@@ -31,34 +30,6 @@ import virtualizarr as vz
 
 
 SWOT_ENDPOINT = "https://archive.swot.podaac.earthdata.nasa.gov/s3credentials"
-
-SMAP_SSS_DATA_VARS = [
-    "sss_smap", "sss_smap_unc", "sss_smap_40km", "sss_smap_40km_unc",
-    "sss_smap_RF", "sss_smap_RF_unc", "sss_ref", "gland", "fland",
-    "gice_est", "surtep", "winspd", "nobs", "nobs_40km", "nobs_RF",
-    "sea_ice_zones",
-]
-
-
-def _neurost_assign_time_from_filename(ds):
-    """Extract observation date from filename and assign as the time coordinate.
-
-    NEUROST granules store time=0 in the file; the actual date is only in the
-    filename: NeurOST_SSH-SST_YYYYMMDD_YYYYMMDD.nc
-    """
-    source = ds.encoding.get("source", "") or ""
-    match = re.search(r"NeurOST_SSH-SST_(\d{8})_", source)
-    if match:
-        date = np.datetime64(f"{match.group(1)[:4]}-{match.group(1)[4:6]}-{match.group(1)[6:8]}")
-    else:
-        date = ds["time"].values.flat[0] if "time" in ds.coords else np.datetime64("NaT")
-    ds = ds.assign_coords(time=[date])
-    return ds
-
-
-def _smap_expand_time_dim(ds):
-    """Expand time dimension if not already present as a dim."""
-    return ds.expand_dims("time") if "time" not in ds.dims else ds
 
 SPECIAL_COLLECTION_SEARCHES = {
     "SWOT_L2_LR_SSH_Basic_2.0": [
@@ -264,20 +235,6 @@ def main(
         if level_2_data:
             xr_combine_kwargs["concat_dim"] = "granule"
 
-        # Collection-specific overrides
-        is_neurost = "NEUROST" in collection
-        is_smap_sss = "SMAP_RSS_L3_SSS" in collection
-
-        if is_neurost:
-            xr_combine_kwargs["coords"] = "all"
-            xr_combine_kwargs["preprocess"] = _neurost_assign_time_from_filename
-            logging.info("Using NEUROST preprocess (time from filename, coords=all)")
-
-        if is_smap_sss:
-            xr_combine_kwargs["data_vars"] = SMAP_SSS_DATA_VARS
-            xr_combine_kwargs["preprocess"] = _smap_expand_time_dim
-            logging.info("Using SMAP SSS preprocess (expand_dims time, explicit data_vars)")
-
         logging.info("Generating virtual references...")
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Numcodecs codecs*", category=UserWarning)
@@ -319,9 +276,6 @@ def main(
                 vds_list.append(vds_batch)
 
         # Combine batches
-        combine_data_vars = xr_combine_kwargs["data_vars"]
-        combine_coords = xr_combine_kwargs["coords"]
-
         if len(vds_list) == 1:
             vds_s3 = vds_list[0]
         else:
@@ -329,15 +283,11 @@ def main(
             vds_s3 = xr.combine_nested(
                 vds_list,
                 concat_dim=xr_combine_kwargs["concat_dim"],
-                data_vars=combine_data_vars,
-                coords=combine_coords,
+                data_vars="minimal",
+                coords="minimal",
                 compat="override",
                 combine_attrs="override",
             )
-
-        if is_neurost:
-            logging.info("Sorting NEUROST VDS by time...")
-            vds_s3 = vds_s3.sortby("time")
 
         logging.info("Combined VDS: %s", vds_s3)
 
