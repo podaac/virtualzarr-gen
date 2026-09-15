@@ -34,19 +34,22 @@ FNAME_STORE_S3 = "OSTIA-UKMO-L4-GLOB-REP-v2.0.icechunk_v2.s3"
 FNAME_STORE_HTTP = "OSTIA-UKMO-L4-GLOB-REP-v2.0.icechunk_v2.https"
 
 ENVIRONMENT = "local"
-N_WORKERS = 96
+N_WORKERS = 32
+MEMORY_LIMIT = "4GiB"
+BATCH_SIZE = 500
 
 
 # =====================================================================================
 # Helper functions
 # =====================================================================================
 
-def create_dask_cluster(environment="local", n_workers=8, cloud_opts=None):
+def create_dask_cluster(environment="local", n_workers=8, memory_limit="4GiB", cloud_opts=None):
     if environment == "local":
         print("Creating new local Dask client")
         cluster = LocalCluster(
             n_workers=n_workers,
             threads_per_worker=1,
+            memory_limit=memory_limit,
             silence_logs=logging.ERROR,
         )
     else:
@@ -101,12 +104,42 @@ def create_local_icechunk_repo_httpaccess(repo_name: str, vcc_http_base: str):
     return icechunk.Repository.create(storage, config)
 
 
+def open_virtual_mfdataset_batched(urls, registry, batch_size, **kwargs):
+    """Process granules in batches to avoid overwhelming the Dask scheduler."""
+    vds_batches = []
+    for i in range(0, len(urls), batch_size):
+        batch = urls[i : i + batch_size]
+        print(f"  Processing batch {i // batch_size + 1} ({len(batch)} granules)")
+        vds = vz.open_virtual_mfdataset(
+            urls=batch,
+            registry=registry,
+            **kwargs,
+        )
+        vds_batches.append(vds)
+
+    if len(vds_batches) == 1:
+        return vds_batches[0]
+
+    return xr.combine_nested(
+        vds_batches,
+        concat_dim="time",
+        data_vars="minimal",
+        coords="minimal",
+        compat="override",
+        combine_attrs="override",
+    )
+
+
 # =====================================================================================
 # Main
 # =====================================================================================
 
 def main():
-    print(f"CPU count = {multiprocessing.cpu_count()}")
+    cpu_count = multiprocessing.cpu_count()
+    print(f"CPU count = {cpu_count}")
+
+    n_workers = min(N_WORKERS, cpu_count)
+    print(f"Using {n_workers} workers with {MEMORY_LIMIT} memory limit each")
 
     # --- Authenticate ---
     auth = ea.login()
@@ -121,7 +154,8 @@ def main():
 
     # --- Create Dask cluster ---
     client, cluster = create_dask_cluster(
-        environment=ENVIRONMENT, n_workers=N_WORKERS, cloud_opts=cloud_opts
+        environment=ENVIRONMENT, n_workers=n_workers,
+        memory_limit=MEMORY_LIMIT, cloud_opts=cloud_opts,
     )
     print(client)
     client.run(silence_worker_warnings_and_auth, auth.token["access_token"])
@@ -161,27 +195,23 @@ def main():
         )
         s3_obstore_registry = ObjectStoreRegistry({f"s3://{bucket}": s3_store})
 
-        # 3. Combine kwargs
-        xr_combine_nested_kwargs = {
-            "concat_dim": "time",
-            "preprocess": lambda ds: ds,
-            "data_vars": "minimal",
-            "coords": "minimal",
-            "compat": "override",
-            "combine_attrs": "override",
-        }
-
-        # 4. Create VDS reference
+        # 3. Create VDS reference in batches
         with warnings.catch_warnings():
             warnings.filterwarnings("ignore", message="Numcodecs codecs*", category=UserWarning)
-            vds_s3 = vz.open_virtual_mfdataset(
+            vds_s3 = open_virtual_mfdataset_batched(
                 urls=granule_data_urls_s3,
                 registry=s3_obstore_registry,
+                batch_size=BATCH_SIZE,
                 parser=HDFParser(),
                 decode_times=False,
                 parallel="dask",
                 combine="nested",
-                **xr_combine_nested_kwargs,
+                concat_dim="time",
+                preprocess=lambda ds: ds,
+                data_vars="minimal",
+                coords="minimal",
+                compat="override",
+                combine_attrs="override",
             )
 
         vds_s3_list.append(vds_s3)
