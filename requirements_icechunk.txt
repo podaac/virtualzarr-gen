@@ -2,7 +2,7 @@ virtualizarr==2.7.3
 zarr==3.2.1
 xarray==2026.7.0
 obstore==0.9.5
-dask==2024.5.2
+dask[complete]==2024.5.2
 fsspec==2026.3.0
 icechunk==2.1.2
 earthaccess==0.18.0
