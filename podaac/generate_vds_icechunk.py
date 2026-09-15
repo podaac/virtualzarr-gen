@@ -283,8 +283,10 @@ def main(
             vds_s3 = xr.combine_nested(
                 vds_list,
                 concat_dim=xr_combine_kwargs["concat_dim"],
+                data_vars="minimal",
+                coords="minimal",
                 compat="override",
-                combine_attrs="drop_conflicts",
+                combine_attrs="override",
             )
 
         logging.info("Combined VDS: %s", vds_s3)
