@@ -31,6 +31,45 @@ import virtualizarr as vz
 
 SWOT_ENDPOINT = "https://archive.swot.podaac.earthdata.nasa.gov/s3credentials"
 
+
+def _preprocess_expand_time_dim(ds):
+    return ds.expand_dims("time") if "time" not in ds.dims else ds
+
+
+def _preprocess_time_from_filename(ds):
+    import re
+    source = ds.encoding.get("source", "") or ""
+    match = re.search(r"NeurOST_SSH-SST_(\d{8})_", source)
+    if match:
+        date = np.datetime64(f"{match.group(1)[:4]}-{match.group(1)[4:6]}-{match.group(1)[6:8]}")
+    else:
+        date = ds["time"].values.flat[0] if "time" in ds.coords else np.datetime64("NaT")
+    ds = ds.assign_coords(time=[date])
+    return ds
+
+
+PREPROCESS_FUNCTIONS = {
+    "expand-time-dim": _preprocess_expand_time_dim,
+    "time-from-filename": _preprocess_time_from_filename,
+}
+
+COLLECTION_OVERRIDES = {
+    "SMAP_RSS_L3_SSS_SMI_8DAY-RUNNINGMEAN_V6": {
+        "preprocess": "expand-time-dim",
+        "data_vars": [
+            "sss_smap", "sss_smap_unc", "sss_smap_40km", "sss_smap_40km_unc",
+            "sss_smap_RF", "sss_smap_RF_unc", "sss_ref", "gland", "fland",
+            "gice_est", "surtep", "winspd", "nobs", "nobs_40km", "nobs_RF",
+            "sea_ice_zones",
+        ],
+    },
+    "NEUROST_SSH-SST_L4_V2024.0": {
+        "preprocess": "time-from-filename",
+        "coords": "all",
+        "sort_by": "time",
+    },
+}
+
 SPECIAL_COLLECTION_SEARCHES = {
     "SWOT_L2_LR_SSH_Basic_2.0": [
         {
@@ -169,8 +208,26 @@ def main(
     cpu_count=16,
     memory_limit="12GB",
     batch_size=48,
+    preprocess=None,
+    data_vars=None,
+    coords=None,
+    sort_by=None,
 ):
     setup_logging(debug)
+
+    # Merge collection-specific overrides with CLI args (CLI wins)
+    overrides = COLLECTION_OVERRIDES.get(collection, {})
+    if preprocess is None:
+        preprocess = overrides.get("preprocess")
+    if data_vars is None:
+        data_vars = overrides.get("data_vars", "minimal")
+    if coords is None:
+        coords = overrides.get("coords", "minimal")
+    if sort_by is None:
+        sort_by = overrides.get("sort_by")
+
+    preprocess_fn = PREPROCESS_FUNCTIONS.get(preprocess) if preprocess else None
+
     logging.info("Collection: %s", collection)
     logging.info("Vars: %s", loadable_coord_vars)
     logging.info("start_date: %s", start_date)
@@ -178,6 +235,10 @@ def main(
     logging.info("cpu_count: %s", cpu_count)
     logging.info("memory_limit: %s", memory_limit)
     logging.info("batch_size: %s", batch_size)
+    logging.info("data_vars: %s", data_vars)
+    logging.info("coords: %s", coords)
+    logging.info("preprocess: %s", preprocess or "none")
+    logging.info("sort_by: %s", sort_by or "none")
     logging.info("CPU count = %d", multiprocessing.cpu_count())
 
     auth = earthaccess.login()
@@ -222,18 +283,16 @@ def main(
     logging.info("Dask client: %s", client)
     client.run(silence_worker_warnings_and_auth, auth.token["access_token"])
 
+    concat_dim = "granule" if level_2_data else "time"
+
     try:
-        # Build VDS using virtualizarr v2
         xr_combine_kwargs = {
-            "concat_dim": "time",
-            "data_vars": "minimal",
-            "coords": "minimal",
+            "concat_dim": concat_dim,
+            "data_vars": data_vars,
+            "coords": coords,
             "compat": "override",
             "combine_attrs": "override",
         }
-
-        if level_2_data:
-            xr_combine_kwargs["concat_dim"] = "granule"
 
         logging.info("Generating virtual references...")
         with warnings.catch_warnings():
@@ -264,7 +323,7 @@ def main(
                 )
                 s3_obstore_registry = ObjectStoreRegistry({f"s3://{bucket}": s3_store})
 
-                vds_batch = vz.open_virtual_mfdataset(
+                mfdataset_kwargs = dict(
                     urls=batch,
                     registry=s3_obstore_registry,
                     parser=HDFParser(),
@@ -273,6 +332,10 @@ def main(
                     combine="nested",
                     **xr_combine_kwargs,
                 )
+                if preprocess_fn:
+                    mfdataset_kwargs["preprocess"] = preprocess_fn
+
+                vds_batch = vz.open_virtual_mfdataset(**mfdataset_kwargs)
                 vds_list.append(vds_batch)
 
         # Combine batches
@@ -282,12 +345,16 @@ def main(
             logging.info("Combining %d batch VDS results...", len(vds_list))
             vds_s3 = xr.combine_nested(
                 vds_list,
-                concat_dim=xr_combine_kwargs["concat_dim"],
-                data_vars="minimal",
-                coords="minimal",
+                concat_dim=concat_dim,
+                data_vars=data_vars,
+                coords=coords,
                 compat="override",
                 combine_attrs="override",
             )
+
+        if sort_by:
+            logging.info("Sorting by %s...", sort_by)
+            vds_s3 = vds_s3.sortby(sort_by)
 
         logging.info("Combined VDS: %s", vds_s3)
 
@@ -306,7 +373,6 @@ def main(
         ]
         vds_s3.attrs['time_coverage_start'] = min(granule_starts)
         vds_s3.attrs['time_coverage_end'] = max(granule_ends)
-        vds_s3.attrs['identifier_product_doi'] = "https://doi.org/10.5067/GHOST-4RM02"
         vds_s3.attrs['date_created'] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         vds_s3.attrs['history'] = f"Icechunk v2 VDS for {collection}"
 
@@ -381,7 +447,37 @@ def cli():
     parser.add_argument("--cpu-count", type=int, default=16, help="Number of Dask workers")
     parser.add_argument("--memory-limit", type=str, default="12GB", help="Memory limit per Dask worker")
     parser.add_argument("--batch-size", type=int, default=48, help="Batch size for processing")
+    parser.add_argument(
+        "--preprocess",
+        type=str,
+        default=None,
+        choices=list(PREPROCESS_FUNCTIONS.keys()),
+        help="Preprocess function to apply per granule (overrides collection default)",
+    )
+    parser.add_argument(
+        "--data-vars",
+        type=str,
+        default=None,
+        help="Comma-separated data vars to concat, or 'minimal' (overrides collection default)",
+    )
+    parser.add_argument(
+        "--coords",
+        type=str,
+        default=None,
+        choices=["minimal", "all"],
+        help="Coordinate handling strategy (overrides collection default)",
+    )
+    parser.add_argument(
+        "--sort-by",
+        type=str,
+        default=None,
+        help="Dimension to sort by after combining (overrides collection default)",
+    )
     args = parser.parse_args()
+
+    data_vars = args.data_vars
+    if data_vars and data_vars != "minimal":
+        data_vars = [v.strip() for v in data_vars.split(",")]
 
     main(
         args.collection,
@@ -393,6 +489,10 @@ def cli():
         args.cpu_count,
         args.memory_limit,
         args.batch_size,
+        preprocess=args.preprocess,
+        data_vars=data_vars,
+        coords=args.coords,
+        sort_by=args.sort_by,
     )
 
 
