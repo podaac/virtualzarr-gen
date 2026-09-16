@@ -336,7 +336,12 @@ def main(
 
     finally:
         logging.info("Shutting down Dask cluster...")
+        warnings.filterwarnings("ignore")
         logging.disable(logging.CRITICAL)
+        try:
+            client.shutdown()
+        except Exception:
+            pass
         try:
             client.close()
         except Exception:
@@ -348,6 +353,7 @@ def main(
         logging.disable(logging.NOTSET)
 
     logging.info("Done.")
+    sys.exit(0)
 
 
 def cli():

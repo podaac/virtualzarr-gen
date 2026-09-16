@@ -80,7 +80,10 @@ sync_icechunk_to_s3() {
 
 if [[ "${ENGINE:-kerchunk}" == "icechunk" ]]; then
   source /opt/venv-icechunk/bin/activate
-  generate-vds-icechunk "${cmd_args[@]}"
+  generate-vds-icechunk "${cmd_args[@]}" || true
+  echo "Working directory: $(pwd)"
+  echo "Listing icechunk directories:"
+  ls -ld *.icechunk_v2.* 2>&1 || echo "No icechunk directories found"
   sync_icechunk_to_s3
 else
   source /opt/venv-kerchunk/bin/activate
