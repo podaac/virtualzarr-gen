@@ -343,15 +343,15 @@ def main(
         warnings.filterwarnings("ignore")
         logging.disable(logging.CRITICAL)
         try:
-            client.shutdown()
+            client.shutdown(timeout=30)
         except Exception:
             pass
         try:
-            client.close()
+            client.close(timeout=30)
         except Exception:
             pass
         try:
-            cluster.close()
+            cluster.close(timeout=30)
         except Exception:
             pass
         logging.disable(logging.NOTSET)
