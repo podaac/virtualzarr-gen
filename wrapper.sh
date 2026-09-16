@@ -78,7 +78,7 @@ sync_icechunk_to_s3() {
       aws s3 cp "$tarfile" "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/$filename" \
         || echo "Staging bucket upload of $filename failed, skipping..."
     fi
-  done < <(find / -maxdepth 5 -name "*.icechunk_v2.*.tar" -type f 2>/dev/null)
+  done < <(find /opt/cloud-optimized -maxdepth 2 -name "*icechunk_v2.*.tar" -type f 2>/dev/null)
 
   # Upload directories
   while IFS= read -r dir; do
@@ -92,7 +92,7 @@ sync_icechunk_to_s3() {
       aws s3 sync "$dir" "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/$dirname/" \
         || echo "Staging bucket upload of $dirname failed, skipping..."
     fi
-  done < <(find / -maxdepth 5 -type d \( -name "*.icechunk_v2.s3" -o -name "*.icechunk_v2.https" \) 2>/dev/null)
+  done < <(find /opt/cloud-optimized -maxdepth 2 -type d \( -name "*icechunk_v2.s3" -o -name "*icechunk_v2.https" \) 2>/dev/null)
 
   if [[ "$found" -eq 0 ]]; then
     echo "WARNING: No icechunk tar files or directories found"
