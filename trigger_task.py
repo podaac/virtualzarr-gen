@@ -47,7 +47,7 @@ def run_task(args):
         {"name": "COLLECTION", "value": args.collection},
         {"name": "LOADABLE_VARS", "value": args.loadable_vars},
         {"name": "OUTPUT_BUCKET", "value": stage_config["output_bucket"]},
-        {"name": "STAGING_BUCKET", "value": stage_config["staging_bucket"]},
+        #{"name": "STAGING_BUCKET", "value": stage_config["staging_bucket"]},
         {"name": "SSM_EDL_USERNAME", "value": stage_config["ssm_edl_username"]},
         {"name": "SSM_EDL_PASSWORD", "value": stage_config["ssm_edl_password"]},
         {"name": "START_DATE", "value": args.start_date or ""},
