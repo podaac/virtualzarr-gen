@@ -64,26 +64,44 @@ if [[ -n "$endDate" ]]; then
 fi
 
 sync_icechunk_to_s3() {
-  for dir in *.icechunk_v2.s3 *.icechunk_v2.https; do
-    if [[ -d "$dir" ]]; then
-      echo "Uploading $dir to S3..."
-      aws s3 sync "$dir" "s3://$OUTPUT_BUCKET/virtual_collections/$COLLECTION/$dir/" \
-        || echo "Primary bucket upload of $dir failed, skipping..."
+  local found=0
 
-      if [[ -n "${STAGING_BUCKET}" ]]; then
-        aws s3 sync "$dir" "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/$dir/" \
-          || echo "Staging bucket upload of $dir failed, skipping..."
-      fi
+  # Upload tar files
+  while IFS= read -r tarfile; do
+    found=1
+    filename=$(basename "$tarfile")
+    echo "Uploading tar: $tarfile"
+    aws s3 cp "$tarfile" "s3://$OUTPUT_BUCKET/virtual_collections/$COLLECTION/$filename" \
+      || echo "Primary bucket upload of $filename failed, skipping..."
+
+    if [[ -n "${STAGING_BUCKET}" ]]; then
+      aws s3 cp "$tarfile" "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/$filename" \
+        || echo "Staging bucket upload of $filename failed, skipping..."
     fi
-  done
+  done < <(find / -maxdepth 5 -name "*.icechunk_v2.*.tar" -type f 2>/dev/null)
+
+  # Upload directories
+  while IFS= read -r dir; do
+    found=1
+    dirname=$(basename "$dir")
+    echo "Uploading directory: $dir"
+    aws s3 sync "$dir" "s3://$OUTPUT_BUCKET/virtual_collections/$COLLECTION/$dirname/" \
+      || echo "Primary bucket upload of $dirname failed, skipping..."
+
+    if [[ -n "${STAGING_BUCKET}" ]]; then
+      aws s3 sync "$dir" "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/$dirname/" \
+        || echo "Staging bucket upload of $dirname failed, skipping..."
+    fi
+  done < <(find / -maxdepth 5 -type d \( -name "*.icechunk_v2.s3" -o -name "*.icechunk_v2.https" \) 2>/dev/null)
+
+  if [[ "$found" -eq 0 ]]; then
+    echo "WARNING: No icechunk tar files or directories found"
+  fi
 }
 
 if [[ "${ENGINE:-kerchunk}" == "icechunk" ]]; then
   source /opt/venv-icechunk/bin/activate
   generate-vds-icechunk "${cmd_args[@]}" || true
-  echo "Working directory: $(pwd)"
-  echo "Listing icechunk directories:"
-  ls -ld *.icechunk_v2.* 2>&1 || echo "No icechunk directories found"
   sync_icechunk_to_s3
 else
   source /opt/venv-kerchunk/bin/activate

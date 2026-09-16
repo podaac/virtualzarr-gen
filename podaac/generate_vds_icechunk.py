@@ -10,6 +10,7 @@ import argparse
 import logging
 import multiprocessing
 import os
+import subprocess
 import sys
 import warnings
 from datetime import datetime, timezone
@@ -332,7 +333,10 @@ def main(
         session_http.commit("Initial commit.")
         logging.info("HTTP store committed.")
 
-        logging.info("Icechunk stores created: %s, %s", fname_s3, fname_http)
+        subprocess.run(["tar", "-cvf", f"{fname_s3}.tar", fname_s3], check=True)
+        subprocess.run(["tar", "-cvf", f"{fname_http}.tar", fname_http], check=True)
+        logging.info("Tar files created: %s.tar, %s.tar",
+                     os.path.abspath(fname_s3), os.path.abspath(fname_http))
 
     finally:
         logging.info("Shutting down Dask cluster...")
