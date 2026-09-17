@@ -3,18 +3,16 @@
 Generate Icechunk virtual Zarr stores for Earthdata collections.
 
 Uses VirtualiZarr v2 to build virtual references from granules on Earthdata,
-then writes them to local Icechunk repositories with both S3 and HTTP endpoints.
+then writes them to S3-native Icechunk repositories with both S3 and HTTP endpoints.
 """
 
 import argparse
 import logging
 import multiprocessing
 import os
-import subprocess
 import sys
 import warnings
 from datetime import datetime, timezone
-from pathlib import Path
 from urllib.parse import urlparse
 
 import earthaccess
@@ -164,8 +162,12 @@ def silence_worker_warnings_and_auth(token):
         logging.getLogger(name).setLevel(logging.ERROR)
 
 
-def create_local_icechunk_repo_s3access(repo_name: str, vcc_bucket: str):
-    storage = icechunk.local_filesystem_storage(path=repo_name)
+def create_icechunk_repo_s3access(output_bucket: str, prefix: str, vcc_bucket: str):
+    storage = icechunk.s3_storage(
+        bucket=output_bucket,
+        prefix=prefix,
+        region="us-west-2",
+    )
     config = icechunk.RepositoryConfig.default()
     config.set_virtual_chunk_container(
         icechunk.VirtualChunkContainer(
@@ -176,8 +178,12 @@ def create_local_icechunk_repo_s3access(repo_name: str, vcc_bucket: str):
     return icechunk.Repository.create(storage, config)
 
 
-def create_local_icechunk_repo_httpaccess(repo_name: str, vcc_http_base: str):
-    storage = icechunk.local_filesystem_storage(path=repo_name)
+def create_icechunk_repo_httpaccess(output_bucket: str, prefix: str, vcc_http_base: str):
+    storage = icechunk.s3_storage(
+        bucket=output_bucket,
+        prefix=prefix,
+        region="us-west-2",
+    )
     config = icechunk.RepositoryConfig.default()
     config.set_virtual_chunk_container(
         icechunk.VirtualChunkContainer(
@@ -203,6 +209,7 @@ def main(
     loadable_coord_vars,
     start_date,
     end_date,
+    output_bucket,
     debug=False,
     level_2_data=False,
     cpu_count=16,
@@ -379,19 +386,23 @@ def main(
         # Create HTTP version
         vds_http = vds_s3.vz.rename_paths(s3_to_http_url)
 
-        # Write to Icechunk stores
+        # Write to S3-native Icechunk stores
         fname_s3, fname_http = build_output_names(collection, start_date, end_date)
+        base_prefix = f"virtual_collections/{collection}/"
 
-        logging.info("Creating S3 Icechunk store: %s", fname_s3)
-        repo_s3 = create_local_icechunk_repo_s3access(fname_s3, "s3://" + bucket)
+        s3_prefix = f"{base_prefix}{fname_s3}/"
+        logging.info("Creating S3 Icechunk store: s3://%s/%s", output_bucket, s3_prefix)
+        repo_s3 = create_icechunk_repo_s3access(output_bucket, s3_prefix, "s3://" + bucket)
         session_s3 = repo_s3.writable_session("main")
         vds_s3.virtualize.to_icechunk(session_s3.store)
         session_s3.commit("Initial commit.")
         logging.info("S3 store committed.")
 
-        logging.info("Creating HTTP Icechunk store: %s", fname_http)
-        repo_http = create_local_icechunk_repo_httpaccess(
-            fname_http,
+        http_prefix = f"{base_prefix}{fname_http}/"
+        logging.info("Creating HTTP Icechunk store: s3://%s/%s", output_bucket, http_prefix)
+        repo_http = create_icechunk_repo_httpaccess(
+            output_bucket,
+            http_prefix,
             "https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-protected/",
         )
         session_http = repo_http.writable_session("main")
@@ -399,10 +410,7 @@ def main(
         session_http.commit("Initial commit.")
         logging.info("HTTP store committed.")
 
-        subprocess.run(["tar", "-cvf", f"{fname_s3}.tar", fname_s3], check=True)
-        subprocess.run(["tar", "-cvf", f"{fname_http}.tar", fname_http], check=True)
-        logging.info("Tar files created: %s.tar, %s.tar",
-                     os.path.abspath(fname_s3), os.path.abspath(fname_http))
+        logging.info("Icechunk stores written to s3://%s/%s", output_bucket, base_prefix)
 
     finally:
         logging.info("Shutting down Dask cluster...")
@@ -448,6 +456,12 @@ def cli():
     parser.add_argument("--memory-limit", type=str, default="12GB", help="Memory limit per Dask worker")
     parser.add_argument("--batch-size", type=int, default=48, help="Batch size for processing")
     parser.add_argument(
+        "--output-bucket",
+        type=str,
+        default=os.environ.get("OUTPUT_BUCKET", ""),
+        help="S3 bucket for icechunk stores (default: $OUTPUT_BUCKET env var)",
+    )
+    parser.add_argument(
         "--preprocess",
         type=str,
         default=None,
@@ -479,11 +493,15 @@ def cli():
     if data_vars and data_vars != "minimal":
         data_vars = [v.strip() for v in data_vars.split(",")]
 
+    if not args.output_bucket:
+        parser.error("--output-bucket is required (or set OUTPUT_BUCKET env var)")
+
     main(
         args.collection,
         args.loadable_coord_vars,
         args.start_date,
         args.end_date,
+        args.output_bucket,
         args.debug,
         args.level_2_data,
         args.cpu_count,
