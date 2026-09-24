@@ -109,8 +109,7 @@ resource "aws_lambda_event_source_mapping" "append_granule_sqs" {
   function_name    = aws_lambda_function.append_granule.arn
   enabled          = true
 
-  batch_size                         = 10
-  maximum_batching_window_in_seconds = 60
+  batch_size = 10
 
   scaling_config {
     maximum_concurrency = var.append_lambda_max_concurrency
