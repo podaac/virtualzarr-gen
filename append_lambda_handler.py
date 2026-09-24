@@ -108,6 +108,7 @@ def get_store_prefix(collection):
 
 
 def open_repo_s3(bucket, prefix, vcc_bucket):
+    logger.info("open_repo_s3: bucket=%s prefix=%s vcc_bucket=%s", bucket, prefix, vcc_bucket)
     storage = icechunk.s3_storage(
         bucket=bucket,
         prefix=prefix,
