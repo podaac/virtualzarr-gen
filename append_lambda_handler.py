@@ -184,8 +184,10 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
     store_prefix = store_prefix_override or get_store_prefix(collection)
     vcc_bucket = f"s3://{source_bucket}"
 
+    logger.info("[%s] store_prefix_override=%s", collection, store_prefix_override)
+    logger.info("[%s] Opening store: s3://%s/%s", collection, store_bucket, store_prefix)
     repo = open_repo_s3(store_bucket, store_prefix, vcc_bucket)
-    logger.info("[%s] Opened store: s3://%s/%s", collection, store_bucket, store_prefix)
+    logger.info("[%s] Opened store successfully", collection)
 
     session = repo.writable_session("main")
 
