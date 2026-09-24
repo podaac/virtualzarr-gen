@@ -49,9 +49,35 @@ resource "aws_ecr_repository" "append_lambda" {
   }
 }
 
+# --- Build and push Lambda container image to ECR ---
+
+resource "null_resource" "append_lambda_image" {
+  depends_on = [aws_ecr_repository.append_lambda]
+
+  triggers = {
+    dockerfile_hash = filesha256("${path.module}/../Dockerfile")
+    handler_hash    = filesha256("${path.module}/../append_lambda_handler.py")
+    repo_url        = aws_ecr_repository.append_lambda.repository_url
+    tag             = var.app_version
+  }
+
+  provisioner "local-exec" {
+    working_dir = "${path.module}/.."
+    command     = <<-EOT
+      aws ecr get-login-password --region ${var.region} | \
+        docker login --username AWS --password-stdin ${aws_ecr_repository.append_lambda.repository_url}
+
+      docker build --target lambda -t ${aws_ecr_repository.append_lambda.repository_url}:${var.app_version} .
+
+      docker push ${aws_ecr_repository.append_lambda.repository_url}:${var.app_version}
+    EOT
+  }
+}
+
 # --- Lambda Function (container image) ---
 
 resource "aws_lambda_function" "append_granule" {
+  depends_on    = [null_resource.append_lambda_image]
   function_name = "${local.resource_prefix}-append-granule"
   role          = aws_iam_role.append_lambda_role.arn
   package_type  = "Image"
