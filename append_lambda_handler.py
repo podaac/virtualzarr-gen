@@ -211,7 +211,7 @@ def handler(event, context):
     if not store_bucket:
         raise ValueError("STORE_BUCKET environment variable is required")
 
-    auth = earthaccess.login()
+    auth = earthaccess.login(strategy="environment")
 
     records = event.get("Records", [])
     if not records:
