@@ -190,3 +190,36 @@ jobs:
           terraform validate
           terraform plan -var-file=tfvars/${{ env.TARGET_ENV_LOWERCASE }}.tfvars
           terraform apply -auto-approve -var-file=tfvars/${{ env.TARGET_ENV_LOWERCASE }}.tfvars
+
+      - name: Get ECR Repository URL
+        id: ecr
+        if: |
+          github.event.head_commit.message == '/deploy sit' ||
+          github.event.head_commit.message == '/deploy uat' ||
+          github.ref == 'refs/heads/develop' ||
+          github.ref == 'refs/heads/main'    ||
+          startsWith(github.ref, 'refs/heads/release')
+        working-directory: terraform
+        run: |
+          ECR_URL=$(terraform output -raw append_lambda_ecr_url)
+          echo "ecr_url=${ECR_URL}" >> $GITHUB_OUTPUT
+
+      - name: Login to ECR
+        if: steps.ecr.outputs.ecr_url
+        run: |
+          aws ecr get-login-password --region us-west-2 | \
+            docker login --username AWS --password-stdin $(echo "${{ steps.ecr.outputs.ecr_url }}" | cut -d'/' -f1)
+
+      - name: Build and Push Append Lambda Image
+        if: steps.ecr.outputs.ecr_url
+        run: |
+          docker build --target lambda -t ${{ steps.ecr.outputs.ecr_url }}:${{ env.new_version }} .
+          docker push ${{ steps.ecr.outputs.ecr_url }}:${{ env.new_version }}
+
+      - name: Update Lambda Function Image
+        if: steps.ecr.outputs.ecr_url
+        run: |
+          aws lambda update-function-code \
+            --function-name service-virtualzarr-gen-${{ env.TARGET_ENV_LOWERCASE }}-append-granule \
+            --image-uri ${{ steps.ecr.outputs.ecr_url }}:${{ env.new_version }} \
+            --region us-west-2
