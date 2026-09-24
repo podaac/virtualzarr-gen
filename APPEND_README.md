@@ -92,9 +92,25 @@ On success, SQS automatically deletes the processed messages. On failure, messag
 
 | File | Purpose |
 |------|---------|
-| `append_granules.py` | CLI tool to append granules to an Icechunk store. Used by Lambda or standalone. |
+| `append_lambda_handler.py` | Lambda handler: receives SQS events, appends granules to Icechunk stores. |
+| `append_granules.py` | CLI tool to append granules to an Icechunk store (standalone usage). |
 | `sqs_append_granules.py` | SQS polling version (alternative to Lambda-triggered approach). Runs as a long-lived process. |
 | `test_append.py` | End-to-end test: creates a store, appends a granule, verifies the result. |
+| `terraform/append_lambda.tf` | Terraform: SQS FIFO queue, DLQ, container Lambda, IAM roles, event source mapping. |
+
+## Docker Build Targets
+
+The Dockerfile uses multi-stage builds with two targets:
+
+```bash
+# ECS target (default — same as before)
+docker build --target ecs -t virtualzarr-gen:ecs .
+
+# Lambda target (append handler)
+docker build --target lambda -t virtualzarr-gen:lambda .
+```
+
+The Lambda target uses the `venv-icechunk` environment with `awslambdaric` and sets the handler to `append_lambda_handler.handler`.
 
 ## Collection Configuration
 
@@ -111,9 +127,46 @@ Each collection can specify:
 - **Icechunk single-writer**: Only one writer per branch per store at a time. The FIFO MessageGroupId enforces this.
 - **FIFO throughput**: 300 messages/sec per MessageGroupId, 3000 messages/sec per queue with high throughput mode. More than sufficient for granule ingestion rates.
 
-## Infrastructure Requirements
+## Infrastructure (Terraform)
 
-- SQS FIFO queue with content-based deduplication or explicit `MessageDeduplicationId`
-- Lambda function with IAM permissions for S3 (read source buckets, read/write store bucket) and SQS
-- Earthdata authentication credentials (via environment variable or Secrets Manager)
-- Python dependencies: `earthaccess`, `icechunk`, `virtualizarr`, `xarray`, `obstore`, `obspec_utils`
+All infrastructure is defined in `terraform/append_lambda.tf`:
+
+| Resource | Description |
+|----------|-------------|
+| SQS FIFO queue | `service-virtualzarr-gen-{stage}-append-granule.fifo` — main queue |
+| SQS DLQ | `service-virtualzarr-gen-{stage}-append-granule-dlq.fifo` — failed messages after 3 retries |
+| ECR repository | Hosts the Lambda container image |
+| Lambda function | Container-based, 15 min timeout, 3 GB memory, VPC-attached |
+| Event source mapping | SQS → Lambda, batch size 10, 60s batching window |
+| IAM role | S3 read/write, SQS consume, CloudWatch logs, SSM parameter access |
+
+### Terraform Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `append_lambda_max_concurrency` | 10 | Max concurrent Lambda invocations (increase for more collections) |
+
+### Deploying the Lambda Image
+
+```bash
+# Build the Lambda image
+docker build --target lambda -t append-lambda:latest .
+
+# Tag and push to ECR
+aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin <account>.dkr.ecr.us-west-2.amazonaws.com
+docker tag append-lambda:latest <ecr-repo-url>:<version>
+docker push <ecr-repo-url>:<version>
+
+# Deploy with Terraform
+cd terraform
+terraform apply -var-file=tfvars/sit.tfvars
+```
+
+### Sending a Test Message
+
+```bash
+aws sqs send-message \
+  --queue-url <queue-url> \
+  --message-body '{"collection":"MUR25-JPL-L4-GLOB-v04.2","granules":["s3://podaac-ops-cumulus-protected/MUR25-JPL-L4-GLOB-v04.2/20020601090000-JPL-L4_GHRSST-SSTfnd-MUR25-GLOB-v02.0-fv04.2.nc"]}' \
+  --message-group-id "MUR25-JPL-L4-GLOB-v04.2"
+```

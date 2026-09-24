@@ -1,4 +1,4 @@
-FROM python:3.12
+FROM python:3.12 AS base
 
 WORKDIR /opt/cloud-optimized
 
@@ -25,9 +25,20 @@ RUN python -m venv /opt/venv-icechunk && \
     /opt/venv-icechunk/bin/pip install --no-cache-dir -r requirements_icechunk.txt && \
     /opt/venv-icechunk/bin/pip install --no-deps -e .
 
-COPY wrapper.sh ./
-# COPY vds_basic_L2_dummytime_prod.ipynb ./
+# --- ECS target (default) ---
+FROM base AS ecs
 
+COPY wrapper.sh ./
 RUN chmod 755 wrapper.sh
 
 ENTRYPOINT ["/opt/cloud-optimized/wrapper.sh"]
+
+# --- Lambda target (append) ---
+FROM base AS lambda
+
+RUN /opt/venv-icechunk/bin/pip install --no-cache-dir awslambdaric
+
+COPY append_lambda_handler.py ./
+
+ENTRYPOINT ["/opt/venv-icechunk/bin/python", "-m", "awslambdaric"]
+CMD ["append_lambda_handler.handler"]

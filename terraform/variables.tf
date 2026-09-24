@@ -35,3 +35,9 @@ variable "image_name" {
   type        = string
   default     = "ghcr.io/podaac/virtualzarr-gen:main"
 }
+
+variable "append_lambda_max_concurrency" {
+  description = "Max concurrent Lambda invocations for the append queue (one per collection)"
+  type        = number
+  default     = 10
+}
