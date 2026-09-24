@@ -162,7 +162,8 @@ def build_vds(data_urls, auth, concat_dim="time", data_vars="minimal",
     return vds, bucket
 
 
-def append_to_collection(collection, granule_urls, store_bucket, auth):
+def append_to_collection(collection, granule_urls, store_bucket, auth,
+                         store_prefix_override=None):
     config = get_collection_config(collection)
     concat_dim = config["concat_dim"]
     data_vars = config["data_vars"]
@@ -180,7 +181,7 @@ def append_to_collection(collection, granule_urls, store_bucket, auth):
     )
     logger.info("[%s] New VDS shape: %s", collection, dict(vds.sizes))
 
-    store_prefix = get_store_prefix(collection)
+    store_prefix = store_prefix_override or get_store_prefix(collection)
     vcc_bucket = f"s3://{source_bucket}"
 
     repo = open_repo_s3(store_bucket, store_prefix, vcc_bucket)
@@ -222,6 +223,7 @@ def handler(event, context):
 
     all_granules = []
     collection = None
+    store_prefix_override = None
 
     for record in records:
         body = json.loads(record["body"])
@@ -230,6 +232,7 @@ def handler(event, context):
 
         if collection is None:
             collection = msg_collection
+            store_prefix_override = body.get("store_prefix")
         elif collection != msg_collection:
             logger.warning(
                 "Mixed collections in batch: %s vs %s. Processing %s only.",
@@ -244,7 +247,8 @@ def handler(event, context):
         return {"statusCode": 200, "body": "No granules"}
 
     logger.info("[%s] Appending %d granule(s)...", collection, len(all_granules))
-    append_to_collection(collection, all_granules, store_bucket, auth)
+    append_to_collection(collection, all_granules, store_bucket, auth,
+                         store_prefix_override=store_prefix_override)
 
     return {
         "statusCode": 200,
