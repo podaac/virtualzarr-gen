@@ -103,12 +103,33 @@ def get_collection_config(collection):
     }
 
 
-def get_store_prefix(collection):
+BUCKET_TO_HOST = {
+    "podaac-swot-ops-cumulus-protected": "archive.swot.podaac.earthdata.nasa.gov",
+    "podaac-swot-ops-cumulus-public": "archive.swot.podaac.earthdata.nasa.gov",
+}
+DEFAULT_HTTPS_HOST = "archive.podaac.earthdata.nasa.gov"
+
+
+def s3_to_https_url(s3_url):
+    """Convert s3://bucket/key to https://archive.podaac.earthdata.nasa.gov/bucket/key"""
+    if not s3_url.startswith("s3://"):
+        return s3_url
+    raw_path = s3_url.replace("s3://", "")
+    bucket_name = raw_path.split("/", 1)[0]
+    host = BUCKET_TO_HOST.get(bucket_name, DEFAULT_HTTPS_HOST)
+    return f"https://{host}/{raw_path}"
+
+
+def get_store_prefix_s3(collection):
     return f"virtual_collections/{collection}/{collection}_icechunk_v2.s3/"
 
 
-def open_repo_s3(bucket, prefix, vcc_bucket):
-    logger.info("open_repo_s3: bucket=%s prefix=%s vcc_bucket=%s", bucket, prefix, vcc_bucket)
+def get_store_prefix_https(collection):
+    return f"virtual_collections/{collection}/{collection}_icechunk_v2.https/"
+
+
+def open_repo(bucket, prefix, vcc_url_prefix, vcc_store):
+    logger.info("open_repo: bucket=%s prefix=%s vcc_url_prefix=%s", bucket, prefix, vcc_url_prefix)
     storage = icechunk.s3_storage(
         bucket=bucket,
         prefix=prefix,
@@ -117,8 +138,8 @@ def open_repo_s3(bucket, prefix, vcc_bucket):
     config = icechunk.Repository.fetch_config(storage)
     config.set_virtual_chunk_container(
         icechunk.VirtualChunkContainer(
-            url_prefix=vcc_bucket + "/",
-            store=icechunk.s3_store(region="us-west-2", anonymous=True),
+            url_prefix=vcc_url_prefix,
+            store=vcc_store,
         )
     )
     return icechunk.Repository.open(storage, config=config)
@@ -163,6 +184,31 @@ def build_vds(data_urls, auth, concat_dim="time", data_vars="minimal",
     return vds, bucket
 
 
+def _append_to_store(collection, vds, store_bucket, store_prefix, vcc_url_prefix,
+                     vcc_store, concat_dim, store_type):
+    """Append a VDS to a single Icechunk store."""
+    logger.info("[%s][%s] Opening store: s3://%s/%s", collection, store_type, store_bucket, store_prefix)
+    repo = open_repo(store_bucket, store_prefix, vcc_url_prefix, vcc_store)
+
+    session = repo.writable_session("main")
+
+    existing_ds = xr.open_zarr(session.store, consolidated=False)
+    logger.info("[%s][%s] Existing shape: %s", collection, store_type, dict(existing_ds.sizes))
+    existing_ds.close()
+
+    vds.vz.to_icechunk(session.store, append_dim=concat_dim)
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    commit_msg = f"Append {len(vds[concat_dim])} granule(s) at {timestamp}"
+    session.commit(commit_msg)
+    logger.info("[%s][%s] Committed: %s", collection, store_type, commit_msg)
+
+    verify_session = repo.readonly_session(branch="main")
+    verify_ds = xr.open_zarr(verify_session.store, consolidated=False)
+    logger.info("[%s][%s] Verified shape: %s", collection, store_type, dict(verify_ds.sizes))
+    verify_ds.close()
+
+
 def append_to_collection(collection, granule_urls, store_bucket, auth,
                          store_prefix_override=None):
     config = get_collection_config(collection)
@@ -173,40 +219,39 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
     preprocess_fn = PREPROCESS_FUNCTIONS.get(preprocess_name) if preprocess_name else None
 
     logger.info("[%s] Building VDS for %d granule(s)...", collection, len(granule_urls))
-    vds, source_bucket = build_vds(
+    vds_s3, source_bucket = build_vds(
         granule_urls, auth,
         concat_dim=concat_dim,
         data_vars=data_vars,
         coords=coords,
         preprocess_fn=preprocess_fn,
     )
-    logger.info("[%s] New VDS shape: %s", collection, dict(vds.sizes))
+    logger.info("[%s] New VDS shape: %s", collection, dict(vds_s3.sizes))
 
-    store_prefix = store_prefix_override or get_store_prefix(collection)
-    vcc_bucket = f"s3://{source_bucket}"
+    # S3 store
+    s3_prefix = store_prefix_override or get_store_prefix_s3(collection)
+    vcc_s3_prefix = f"s3://{source_bucket}/"
+    _append_to_store(
+        collection, vds_s3, store_bucket, s3_prefix,
+        vcc_url_prefix=vcc_s3_prefix,
+        vcc_store=icechunk.s3_store(region="us-west-2", anonymous=True),
+        concat_dim=concat_dim,
+        store_type="s3",
+    )
 
-    logger.info("[%s] store_prefix_override=%s", collection, store_prefix_override)
-    logger.info("[%s] Opening store: s3://%s/%s", collection, store_bucket, store_prefix)
-    repo = open_repo_s3(store_bucket, store_prefix, vcc_bucket)
-    logger.info("[%s] Opened store successfully", collection)
+    # HTTPS store
+    https_prefix = store_prefix_override.replace(".s3/", ".https/") if store_prefix_override else get_store_prefix_https(collection)
+    https_host = BUCKET_TO_HOST.get(source_bucket, DEFAULT_HTTPS_HOST)
+    vcc_https_prefix = f"https://{https_host}/{source_bucket}/"
 
-    session = repo.writable_session("main")
-
-    existing_ds = xr.open_zarr(session.store, consolidated=False)
-    logger.info("[%s] Existing shape: %s", collection, dict(existing_ds.sizes))
-    existing_ds.close()
-
-    vds.vz.to_icechunk(session.store, append_dim=concat_dim)
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    commit_msg = f"Append {len(granule_urls)} granule(s) at {timestamp}"
-    session.commit(commit_msg)
-    logger.info("[%s] Committed: %s", collection, commit_msg)
-
-    verify_session = repo.readonly_session(branch="main")
-    verify_ds = xr.open_zarr(verify_session.store, consolidated=False)
-    logger.info("[%s] Verified shape: %s", collection, dict(verify_ds.sizes))
-    verify_ds.close()
+    vds_https = vds_s3.vz.rename_paths(s3_to_https_url)
+    _append_to_store(
+        collection, vds_https, store_bucket, https_prefix,
+        vcc_url_prefix=vcc_https_prefix,
+        vcc_store=icechunk.http_store(),
+        concat_dim=concat_dim,
+        store_type="https",
+    )
 
 
 def handler(event, context):

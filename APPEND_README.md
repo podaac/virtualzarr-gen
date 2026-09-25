@@ -7,17 +7,30 @@ Append new granules to existing Icechunk v2 virtual Zarr stores on S3, driven by
 ## Architecture
 
 ```
-Event Source (CNM, Cumulus, EventBridge)
-        │
-        ▼
-   SQS FIFO Queue
-   (MessageGroupId = collection short_name)
-        │
-        ▼
-   Lambda (one per collection, concurrent)
-        │
-        ▼
-   Icechunk Store on S3 (one per collection)
+Cumulus Ingest
+      │
+      ▼
+  CNM-R SNS Topic
+      │
+      ▼
+  Transform Lambda (cnm_transform_lambda)
+  ├── Filters: SUCCESS status only, collection allowlist
+  ├── Extracts data file URIs (skips .md5, .cmr.json)
+  ├── Converts HTTPS → S3 URIs
+  └── Sends formatted message to SQS
+      │
+      ▼
+  SQS FIFO Queue
+  (MessageGroupId = collection short_name)
+      │
+      ▼
+  Append Lambda (append_lambda_handler)
+  ├── Parallel across collections
+  ├── Sequential within a collection
+  └── Batch size up to 10 messages
+      │
+      ▼
+  Icechunk Store on S3 (one per collection)
 ```
 
 ## How It Works
@@ -35,12 +48,30 @@ SQS batches messages before triggering Lambda using two settings:
 
 | Setting | Value | Description |
 |---------|-------|-------------|
-| `BatchSize` | 10 | Max granules per Lambda invocation |
-| `MaximumBatchingWindow` | 60s | Wait up to 60s to fill a batch before triggering |
+| `BatchSize` | 10 | Max messages per Lambda invocation |
 
-If 50 granules arrive for MUR25, they process as 5 sequential batches of 10. Each batch appends all 10 granules in a single Icechunk commit.
+FIFO queues do not support batching windows. Messages are delivered immediately as they arrive (up to batch size). If 50 granules arrive for MUR25, they process as 5 sequential batches of 10.
 
-### Message Format
+### CNM-R Input Format (from Cumulus via SNS)
+
+The transform Lambda receives CNM-R messages like this and extracts the data file URIs:
+
+```json
+{
+  "collection": "MUR25-JPL-L4-GLOB-v04.2",
+  "response": {"status": "SUCCESS"},
+  "product": {
+    "files": [
+      {"type": "data", "uri": "s3://podaac-ops-cumulus-protected/MUR25.../file.nc"},
+      {"type": "metadata", "uri": "...file.nc.md5"}
+    ]
+  }
+}
+```
+
+It filters for `status == "SUCCESS"`, keeps only `type == "data"` files, converts HTTPS URIs to S3, and forwards to the SQS FIFO queue.
+
+### SQS Message Format (internal)
 
 ```json
 {
@@ -92,11 +123,14 @@ On success, SQS automatically deletes the processed messages. On failure, messag
 
 | File | Purpose |
 |------|---------|
-| `append_lambda_handler.py` | Lambda handler: receives SQS events, appends granules to Icechunk stores. |
+| `terraform/cnm_transform_lambda.py` | Transform Lambda: parses CNM-R from SNS, sends formatted messages to SQS FIFO. |
+| `terraform/cnm_transform_lambda.tf` | Terraform: transform Lambda, SNS subscription, IAM. |
+| `append_lambda_handler.py` | Append Lambda: receives SQS events, appends granules to Icechunk stores. |
+| `terraform/append_lambda.tf` | Terraform: SQS FIFO queue, DLQ, container Lambda, IAM, event source mapping. |
 | `append_granules.py` | CLI tool to append granules to an Icechunk store (standalone usage). |
-| `sqs_append_granules.py` | SQS polling version (alternative to Lambda-triggered approach). Runs as a long-lived process. |
-| `test_append.py` | End-to-end test: creates a store, appends a granule, verifies the result. |
-| `terraform/append_lambda.tf` | Terraform: SQS FIFO queue, DLQ, container Lambda, IAM roles, event source mapping. |
+| `test_e2e_setup_store.py` | Test: create a test Icechunk store with 5 granules. |
+| `test_e2e_send_sqs.py` | Test: send granule append messages to the SQS FIFO queue. |
+| `test_e2e_verify_store.py` | Test: verify/watch the store for updates. |
 
 ## Docker Build Targets
 
@@ -129,22 +163,32 @@ Each collection can specify:
 
 ## Infrastructure (Terraform)
 
-All infrastructure is defined in `terraform/append_lambda.tf`:
+### CNM Transform (`terraform/cnm_transform_lambda.tf`)
+
+| Resource | Description |
+|----------|-------------|
+| Lambda function | `service-virtualzarr-gen-{stage}-cnm-transform` — zip-based, Python 3.12, 60s timeout |
+| SNS subscription | Subscribes to the CNM-R SNS topic (optional, controlled by `cnm_sns_topic_arn`) |
+| IAM role | SNS invoke + SQS send permissions |
+
+### Append Pipeline (`terraform/append_lambda.tf`)
 
 | Resource | Description |
 |----------|-------------|
 | SQS FIFO queue | `service-virtualzarr-gen-{stage}-append-granule.fifo` — main queue |
 | SQS DLQ | `service-virtualzarr-gen-{stage}-append-granule-dlq.fifo` — failed messages after 3 retries |
-| ECR repository | Hosts the Lambda container image |
-| Lambda function | Container-based, 15 min timeout, 3 GB memory, VPC-attached |
-| Event source mapping | SQS → Lambda, batch size 10, 60s batching window |
+| ECR repository | Hosts the append Lambda container image |
+| Lambda function | `service-virtualzarr-gen-{stage}-append-granule` — container-based, 15 min timeout, 3 GB memory, VPC-attached |
+| Event source mapping | SQS → Lambda, batch size 10 |
 | IAM role | S3 read/write, SQS consume, CloudWatch logs, SSM parameter access |
 
 ### Terraform Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `append_lambda_max_concurrency` | 10 | Max concurrent Lambda invocations (increase for more collections) |
+| `append_lambda_max_concurrency` | 10 | Max concurrent append Lambda invocations (increase for more collections) |
+| `cnm_sns_topic_arn` | `""` | ARN of the CNM-R SNS topic. Leave empty to skip subscription. |
+| `cnm_collection_allowlist` | `""` | Comma-separated collection short names to process. Empty = all. |
 
 ### Deploying the Lambda Image
 

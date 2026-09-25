@@ -41,3 +41,15 @@ variable "append_lambda_max_concurrency" {
   type        = number
   default     = 10
 }
+
+variable "cnm_sns_topic_arn" {
+  description = "ARN of the SNS topic that receives CNM-R messages. Leave empty to skip subscription."
+  type        = string
+  default     = ""
+}
+
+variable "cnm_collection_allowlist" {
+  description = "Comma-separated list of collection short names to process. Empty = all collections."
+  type        = string
+  default     = ""
+}
