@@ -83,21 +83,42 @@ It filters for `status == "SUCCESS"`, keeps only `type == "data"` files, convert
 }
 ```
 
-The `MessageGroupId` must be set to the `collection` value, and each message needs a unique `MessageDeduplicationId`.
+The `MessageGroupId` must be set to the `collection` value. The queue has
+`content_based_deduplication = true`, so a `MessageDeduplicationId` is derived
+from the message body automatically (dedup window is 5 minutes) — the transform
+Lambda does not set one explicitly. Idempotency against re-delivery beyond the
+dedup window is still enforced downstream by the append handler (it skips
+concat-dim values already present in the store).
 
 ### Lambda Processing
 
 Each Lambda invocation:
 
-1. Receives a batch of SQS messages (up to 10 granules)
-2. Groups granules by collection (usually all the same within a batch)
-3. Builds a virtual dataset using `virtualizarr`
+1. Loads Earthdata credentials from SSM (once per cold start) and logs in
+2. Receives a batch of SQS messages (up to 10 granules). A single FIFO poll can
+   contain messages from **more than one** collection (multiple MessageGroupIds),
+   so the handler **groups records by collection** and processes each group —
+   it never drops the non-first collections.
+3. For each collection: builds a virtual dataset using `virtualizarr`
 4. Opens the existing Icechunk store on S3
-5. Appends the virtual dataset along the concat dimension (typically `time`)
+5. **Idempotency guard**: drops any incoming granules whose concat-dim value
+   (e.g. `time`) already exists in the store, then appends only the new ones
 6. Commits with a timestamped message
 7. Verifies the final store shape
+8. Repeats 4–7 for the HTTPS-access store
 
-On success, SQS automatically deletes the processed messages. On failure, messages return to the queue after the visibility timeout and retry.
+On success, SQS deletes the processed messages. On failure, the handler returns
+`batchItemFailures` containing only the failed collection's message ids
+(`ReportBatchItemFailures` is enabled on the event source mapping), so unrelated
+collections in the same batch are not retried. Retries are safe because the
+idempotency guard makes an already-applied append a no-op — this also covers the
+case where the S3 store committed but the HTTPS store did not (the two commits
+are not atomic).
+
+**Earthdata credentials**: the Lambda reads `SSM_EDL_USERNAME`/`SSM_EDL_PASSWORD`
+(or `SSM_EDL_TOKEN`), each holding the *name* of an SSM parameter, resolves them
+at cold start, and injects `EARTHDATA_*` into the environment — the same
+convention as the ECS `wrapper.sh`.
 
 ## Example Flow
 
@@ -177,6 +198,7 @@ Each collection can specify:
 |----------|-------------|
 | SQS FIFO queue | `service-virtualzarr-gen-{stage}-append-granule.fifo` — main queue |
 | SQS DLQ | `service-virtualzarr-gen-{stage}-append-granule-dlq.fifo` — failed messages after 3 retries |
+| CloudWatch alarm | `service-virtualzarr-gen-{stage}-append-granule-dlq-not-empty` — fires when the DLQ is non-empty (a poison granule can otherwise stall a collection's FIFO group) |
 | ECR repository | Hosts the append Lambda container image |
 | Lambda function | `service-virtualzarr-gen-{stage}-append-granule` — container-based, 15 min timeout, 3 GB memory, VPC-attached |
 | Event source mapping | SQS → Lambda, batch size 10 |
@@ -189,6 +211,9 @@ Each collection can specify:
 | `append_lambda_max_concurrency` | 10 | Max concurrent append Lambda invocations (increase for more collections) |
 | `cnm_sns_topic_arn` | `""` | ARN of the CNM-R SNS topic. Leave empty to skip subscription. |
 | `cnm_collection_allowlist` | `""` | Comma-separated collection short names to process. Empty = all. |
+| `ssm_edl_username_name` | `""` | Name of the SSM parameter holding the Earthdata username. |
+| `ssm_edl_password_name` | `""` | Name of the SSM parameter holding the Earthdata password. |
+| `ssm_edl_token_name` | `""` | Name of the SSM parameter holding an Earthdata token (takes precedence if set). |
 
 ### Deploying the Lambda Image
 

@@ -53,3 +53,21 @@ variable "cnm_collection_allowlist" {
   type        = string
   default     = ""
 }
+
+variable "ssm_edl_username_name" {
+  description = "Name of the SSM parameter holding the Earthdata (EDL) username."
+  type        = string
+  default     = ""
+}
+
+variable "ssm_edl_password_name" {
+  description = "Name of the SSM parameter holding the Earthdata (EDL) password."
+  type        = string
+  default     = ""
+}
+
+variable "ssm_edl_token_name" {
+  description = "Name of the SSM parameter holding an Earthdata (EDL) token. Takes precedence over username/password if set."
+  type        = string
+  default     = ""
+}

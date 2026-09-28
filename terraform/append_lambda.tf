@@ -37,6 +37,32 @@ resource "aws_sqs_queue_redrive_policy" "append_granule" {
   })
 }
 
+# --- DLQ depth alarm ---
+# A poison granule that fails maxReceiveCount times lands in the DLQ and, because
+# FIFO preserves per-group ordering, can stall that collection's ingestion. Alarm
+# so it gets attention instead of silently blocking a collection.
+
+resource "aws_cloudwatch_metric_alarm" "append_granule_dlq" {
+  alarm_name          = "${local.resource_prefix}-append-granule-dlq-not-empty"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = "Messages have landed in the append-granule DLQ; a granule failed to append ${jsonencode(3)} times."
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.append_granule_dlq.name
+  }
+
+  tags = {
+    Name = "${local.resource_prefix}-append-granule-dlq-alarm"
+  }
+}
+
 # --- ECR Repository for the append Lambda image ---
 
 resource "aws_ecr_repository" "append_lambda" {
@@ -88,7 +114,10 @@ resource "aws_lambda_function" "append_granule" {
 
   environment {
     variables = {
-      STORE_BUCKET = var.output_bucket[0]
+      STORE_BUCKET     = var.output_bucket[0]
+      SSM_EDL_USERNAME = var.ssm_edl_username_name
+      SSM_EDL_PASSWORD = var.ssm_edl_password_name
+      SSM_EDL_TOKEN    = var.ssm_edl_token_name
     }
   }
 

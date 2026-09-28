@@ -51,6 +51,19 @@ from virtualizarr.parsers import HDFParser
 import virtualizarr as vz
 
 
+BUCKET_TO_HOST = {
+    "podaac-swot-ops-cumulus-protected": "archive.swot.podaac.earthdata.nasa.gov",
+    "podaac-swot-ops-cumulus-public": "archive.swot.podaac.earthdata.nasa.gov",
+}
+DEFAULT_HTTPS_HOST = "archive.podaac.earthdata.nasa.gov"
+
+_STANDARD_16_VAR = [
+    "sss_smap", "sss_smap_unc", "sss_smap_40km", "sss_smap_40km_unc",
+    "sss_smap_RF", "sss_smap_RF_unc", "sss_ref", "gland", "fland",
+    "gice_est", "surtep", "winspd", "nobs", "nobs_40km", "nobs_RF",
+    "sea_ice_zones",
+]
+
 COLLECTION_CONFIG = {
     "MUR25-JPL-L4-GLOB-v04.2": {
         "concat_dim": "time",
@@ -59,12 +72,7 @@ COLLECTION_CONFIG = {
     },
     "SMAP_RSS_L3_SSS_SMI_8DAY-RUNNINGMEAN_V6": {
         "concat_dim": "time",
-        "data_vars": [
-            "sss_smap", "sss_smap_unc", "sss_smap_40km", "sss_smap_40km_unc",
-            "sss_smap_RF", "sss_smap_RF_unc", "sss_ref", "gland", "fland",
-            "gice_est", "surtep", "winspd", "nobs", "nobs_40km", "nobs_RF",
-            "sea_ice_zones",
-        ],
+        "data_vars": _STANDARD_16_VAR,
         "coords": "minimal",
         "preprocess": "expand-time-dim",
     },
@@ -73,13 +81,40 @@ COLLECTION_CONFIG = {
         "data_vars": "minimal",
         "coords": "all",
         "preprocess": "time-from-filename",
+        "sort": True,
     },
     "OSTIA-UKMO-L4-GLOB-REP-v2.0": {
         "concat_dim": "time",
         "data_vars": "minimal",
         "coords": "minimal",
     },
-    "CCMP_Wind_Analysis_V3.1_L4": {
+    # Real short_name (was previously the wrong "CCMP_Wind_Analysis_V3.1_L4").
+    "CCMP_WINDS_10M6HR_L4_V3.1": {
+        "concat_dim": "time",
+        "data_vars": "minimal",
+        "coords": "minimal",
+    },
+    "ECCO_L4_OBP_05DEG_DAILY_V4R4B": {
+        "concat_dim": "time",
+        "data_vars": "minimal",
+        "coords": "minimal",
+    },
+    "ECCO_L4_OCEAN_VEL_05DEG_DAILY_V4R4": {
+        "concat_dim": "time",
+        "data_vars": "minimal",
+        "coords": "minimal",
+    },
+    "ECCO_L4_SSH_05DEG_DAILY_V4R4B": {
+        "concat_dim": "time",
+        "data_vars": "minimal",
+        "coords": "minimal",
+    },
+    "ECCO_L4_TEMP_SALINITY_05DEG_DAILY_V4R4": {
+        "concat_dim": "time",
+        "data_vars": "minimal",
+        "coords": "minimal",
+    },
+    "TELLUS_GRAC-GRFO_MASCON_CRI_GRID_RL06.3_V4": {
         "concat_dim": "time",
         "data_vars": "minimal",
         "coords": "minimal",
@@ -142,7 +177,10 @@ def build_vds(data_urls, auth, concat_dim="time", data_vars="minimal",
               coords="minimal", preprocess_fn=None):
     parsed_url = urlparse(data_urls[0])
     bucket = parsed_url.netloc
-    credentials_endpoint = "https://archive.podaac.earthdata.nasa.gov/s3credentials"
+    # Credentials endpoint follows the archive host of the source bucket
+    # (e.g. SWOT buckets use archive.swot.podaac.earthdata.nasa.gov).
+    creds_host = BUCKET_TO_HOST.get(bucket, DEFAULT_HTTPS_HOST)
+    credentials_endpoint = f"https://{creds_host}/s3credentials"
 
     s3_store = S3Store(
         bucket=bucket,
@@ -211,11 +249,40 @@ def parse_and_group_messages(messages):
     return grouped, errors
 
 
+def _filter_new_along_dim(vds, existing_ds, concat_dim):
+    """Return the subset of vds whose concat-dim coordinate values are NOT
+    already present in existing_ds.
+
+    Idempotency guard: SQS delivers at-least-once and failed batches are retried,
+    so filtering already-present coordinate values makes every append a no-op if
+    it has already been applied, preventing duplicate time steps.
+    """
+    if concat_dim not in vds.coords:
+        logging.warning("Concat dim %r is not a coordinate; skipping idempotency filter.", concat_dim)
+        return vds
+
+    new_vals = np.asarray(vds[concat_dim].values)
+    existing_vals = (
+        np.asarray(existing_ds[concat_dim].values)
+        if concat_dim in existing_ds.coords
+        else np.array([], dtype=new_vals.dtype)
+    )
+    mask = ~np.isin(new_vals, existing_vals)
+    if mask.all():
+        return vds
+    logging.info(
+        "Idempotency filter: %d of %d incoming %s value(s) are new.",
+        int(mask.sum()), len(new_vals), concat_dim,
+    )
+    return vds.isel({concat_dim: np.where(mask)[0]})
+
+
 def append_to_collection(collection, granule_urls, store_bucket, auth):
     config = get_collection_config(collection)
     concat_dim = config["concat_dim"]
     data_vars = config["data_vars"]
     coords = config["coords"]
+    sort = config.get("sort", False)
     preprocess_name = config.get("preprocess")
     preprocess_fn = PREPROCESS_FUNCTIONS.get(preprocess_name) if preprocess_name else None
 
@@ -238,13 +305,37 @@ def append_to_collection(collection, granule_urls, store_bucket, auth):
     session = repo.writable_session("main")
 
     existing_ds = xr.open_zarr(session.store, consolidated=False)
+    existing_max = None
+    if concat_dim in existing_ds.coords and existing_ds.sizes.get(concat_dim, 0) > 0:
+        existing_max = np.asarray(existing_ds[concat_dim].values).max()
     logging.info("[%s] Existing shape: %s", collection, dict(existing_ds.sizes))
+
+    # Idempotency: drop any granules whose concat-dim value is already present.
+    vds_new = _filter_new_along_dim(vds, existing_ds, concat_dim)
     existing_ds.close()
 
-    vds.vz.to_icechunk(session.store, append_dim=concat_dim)
+    n_new = int(vds_new.sizes.get(concat_dim, 0))
+    if n_new == 0:
+        logging.info("[%s] Nothing new to append (all values already present).", collection)
+        return
+
+    # Icechunk append only concatenates; it does not reorder. Warn if this would
+    # break monotonicity along the append dimension.
+    if existing_max is not None and concat_dim in vds_new.coords:
+        incoming_min = np.asarray(vds_new[concat_dim].values).min()
+        if incoming_min <= existing_max:
+            logging.warning(
+                "[%s] Incoming %s min (%s) <= existing max (%s); append will produce "
+                "non-monotonic %s.", collection, concat_dim, incoming_min, existing_max, concat_dim,
+            )
+
+    if sort:
+        vds_new = vds_new.sortby(concat_dim)
+
+    vds_new.vz.to_icechunk(session.store, append_dim=concat_dim)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    commit_msg = f"Append {len(granule_urls)} granule(s) at {timestamp}"
+    commit_msg = f"Append {n_new} granule(s) at {timestamp}"
     session.commit(commit_msg)
     logging.info("[%s] Committed: %s", collection, commit_msg)
 
