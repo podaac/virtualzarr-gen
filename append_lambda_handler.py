@@ -200,7 +200,11 @@ def _append_to_store(collection, vds, store_bucket, store_prefix, vcc_url_prefix
 
     session = repo.writable_session("main")
 
-    existing_ds = xr.open_zarr(session.store, consolidated=False)
+    # Open undecoded: the incoming vds uses decode_times=False (raw encoded
+    # ints), and the store holds the same raw values. Decoding the existing
+    # side to datetime64 would make the idempotency filter and monotonicity
+    # check compare int vs datetime64 and raise DTypePromotionError.
+    existing_ds = xr.open_zarr(session.store, consolidated=False, decode_times=False)
     existing_max = None
     if concat_dim in existing_ds.coords and existing_ds.sizes.get(concat_dim, 0) > 0:
         existing_max = np.asarray(existing_ds[concat_dim].values).max()
@@ -237,7 +241,7 @@ def _append_to_store(collection, vds, store_bucket, store_prefix, vcc_url_prefix
     logger.info("[%s][%s] Committed: %s", collection, store_type, commit_msg)
 
     verify_session = repo.readonly_session(branch="main")
-    verify_ds = xr.open_zarr(verify_session.store, consolidated=False)
+    verify_ds = xr.open_zarr(verify_session.store, consolidated=False, decode_times=False)
     logger.info("[%s][%s] Verified shape: %s", collection, store_type, dict(verify_ds.sizes))
     verify_ds.close()
     return n_new
