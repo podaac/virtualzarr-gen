@@ -128,6 +128,20 @@ def silence_worker_warnings_and_auth(token):
         logging.getLogger(name).setLevel(logging.ERROR)
 
 
+def _silence_distributed_logging():
+    """Run *inside worker processes* to mute the benign heartbeat/CommClosed
+    tracebacks emitted during cluster teardown. logging.disable() in the main
+    process cannot reach these because workers are separate processes.
+    """
+    import logging
+    for name in (
+        "distributed", "distributed.worker", "distributed.core",
+        "distributed.comm", "distributed.nanny", "distributed.scheduler",
+        "distributed.batched",
+    ):
+        logging.getLogger(name).setLevel(logging.CRITICAL)
+
+
 def create_icechunk_repo_s3access(output_bucket: str, prefix: str, vcc_bucket: str):
     storage = icechunk.s3_storage(
         bucket=output_bucket,
@@ -386,6 +400,14 @@ def main(
 
     finally:
         logging.info("Shutting down Dask cluster...")
+        # Mute the benign teardown race (workers heartbeat a scheduler that is
+        # already closing -> CommClosedError). Raise the log level inside the
+        # worker processes first, since logging.disable() below only affects the
+        # main process. Best-effort: the cluster may already be degraded here.
+        try:
+            client.run(_silence_distributed_logging)
+        except Exception:
+            pass
         warnings.filterwarnings("ignore")
         logging.disable(logging.CRITICAL)
         try:
