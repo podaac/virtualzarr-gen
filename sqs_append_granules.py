@@ -50,111 +50,13 @@ from obspec_utils.registry import ObjectStoreRegistry
 from virtualizarr.parsers import HDFParser
 import virtualizarr as vz
 
-
-BUCKET_TO_HOST = {
-    "podaac-swot-ops-cumulus-protected": "archive.swot.podaac.earthdata.nasa.gov",
-    "podaac-swot-ops-cumulus-public": "archive.swot.podaac.earthdata.nasa.gov",
-}
-DEFAULT_HTTPS_HOST = "archive.podaac.earthdata.nasa.gov"
-
-_STANDARD_16_VAR = [
-    "sss_smap", "sss_smap_unc", "sss_smap_40km", "sss_smap_40km_unc",
-    "sss_smap_RF", "sss_smap_RF_unc", "sss_ref", "gland", "fland",
-    "gice_est", "surtep", "winspd", "nobs", "nobs_40km", "nobs_RF",
-    "sea_ice_zones",
-]
-
-COLLECTION_CONFIG = {
-    "MUR25-JPL-L4-GLOB-v04.2": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "SMAP_RSS_L3_SSS_SMI_8DAY-RUNNINGMEAN_V6": {
-        "concat_dim": "time",
-        "data_vars": _STANDARD_16_VAR,
-        "coords": "minimal",
-        "preprocess": "expand-time-dim",
-    },
-    "NEUROST_SSH-SST_L4_V2024.0": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "all",
-        "preprocess": "time-from-filename",
-        "sort": True,
-    },
-    "OSTIA-UKMO-L4-GLOB-REP-v2.0": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    # Real short_name (was previously the wrong "CCMP_Wind_Analysis_V3.1_L4").
-    "CCMP_WINDS_10M6HR_L4_V3.1": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "ECCO_L4_OBP_05DEG_DAILY_V4R4B": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "ECCO_L4_OCEAN_VEL_05DEG_DAILY_V4R4": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "ECCO_L4_SSH_05DEG_DAILY_V4R4B": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "ECCO_L4_TEMP_SALINITY_05DEG_DAILY_V4R4": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "TELLUS_GRAC-GRFO_MASCON_CRI_GRID_RL06.3_V4": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-}
-
-def _preprocess_expand_time_dim(ds):
-    return ds.expand_dims("time") if "time" not in ds.dims else ds
-
-
-def _preprocess_time_from_filename(ds):
-    import re
-    source = ds.encoding.get("source", "") or ""
-    match = re.search(r"NeurOST_SSH-SST_(\d{8})_", source)
-    if match:
-        date = np.datetime64(f"{match.group(1)[:4]}-{match.group(1)[4:6]}-{match.group(1)[6:8]}")
-    else:
-        date = ds["time"].values.flat[0] if "time" in ds.coords else np.datetime64("NaT")
-    ds = ds.assign_coords(time=[date])
-    return ds
-
-
-PREPROCESS_FUNCTIONS = {
-    "expand-time-dim": _preprocess_expand_time_dim,
-    "time-from-filename": _preprocess_time_from_filename,
-}
-
-
-def get_collection_config(collection):
-    if collection in COLLECTION_CONFIG:
-        return COLLECTION_CONFIG[collection]
-    return {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    }
-
-
-def get_store_prefix(collection):
-    return f"virtual_collections/{collection}/{collection}_icechunk_v2.s3/"
+from collection_config import (
+    BUCKET_TO_HOST,
+    DEFAULT_HTTPS_HOST,
+    get_collection_config,
+    get_preprocess_fn,
+    get_store_prefix_s3,
+)
 
 
 def open_repo_s3(bucket, prefix, vcc_bucket):
@@ -283,8 +185,7 @@ def append_to_collection(collection, granule_urls, store_bucket, auth):
     data_vars = config["data_vars"]
     coords = config["coords"]
     sort = config.get("sort", False)
-    preprocess_name = config.get("preprocess")
-    preprocess_fn = PREPROCESS_FUNCTIONS.get(preprocess_name) if preprocess_name else None
+    preprocess_fn = get_preprocess_fn(config)
 
     logging.info("[%s] Building VDS for %d granule(s)...", collection, len(granule_urls))
     vds, source_bucket = build_vds(
@@ -296,7 +197,7 @@ def append_to_collection(collection, granule_urls, store_bucket, auth):
     )
     logging.info("[%s] New VDS shape: %s", collection, dict(vds.sizes))
 
-    store_prefix = get_store_prefix(collection)
+    store_prefix = get_store_prefix_s3(collection)
     vcc_bucket = f"s3://{source_bucket}"
 
     repo = open_repo_s3(store_bucket, store_prefix, vcc_bucket)

@@ -31,6 +31,16 @@ from obspec_utils.registry import ObjectStoreRegistry
 from virtualizarr.parsers import HDFParser
 import virtualizarr as vz
 
+from collection_config import (
+    BUCKET_TO_HOST,
+    DEFAULT_HTTPS_HOST,
+    get_collection_config,
+    get_preprocess_fn,
+    get_store_prefix_https,
+    get_store_prefix_s3,
+    s3_to_http_url,
+)
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -42,102 +52,6 @@ STORE_BUCKET = os.environ.get("STORE_BUCKET", "")
 SSM_EDL_USERNAME = os.environ.get("SSM_EDL_USERNAME", "")
 SSM_EDL_PASSWORD = os.environ.get("SSM_EDL_PASSWORD", "")
 SSM_EDL_TOKEN = os.environ.get("SSM_EDL_TOKEN", "")
-
-_STANDARD_16_VAR = [
-    "sss_smap", "sss_smap_unc", "sss_smap_40km", "sss_smap_40km_unc",
-    "sss_smap_RF", "sss_smap_RF_unc", "sss_ref", "gland", "fland",
-    "gice_est", "surtep", "winspd", "nobs", "nobs_40km", "nobs_RF",
-    "sea_ice_zones",
-]
-
-COLLECTION_CONFIG = {
-    "MUR25-JPL-L4-GLOB-v04.2": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "SMAP_RSS_L3_SSS_SMI_8DAY-RUNNINGMEAN_V6": {
-        "concat_dim": "time",
-        "data_vars": _STANDARD_16_VAR,
-        "coords": "minimal",
-        "preprocess": "expand-time-dim",
-    },
-    "NEUROST_SSH-SST_L4_V2024.0": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "all",
-        "preprocess": "time-from-filename",
-        "sort": True,
-    },
-    "OSTIA-UKMO-L4-GLOB-REP-v2.0": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    # Real short_name (was previously the wrong "CCMP_Wind_Analysis_V3.1_L4").
-    "CCMP_WINDS_10M6HR_L4_V3.1": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "ECCO_L4_OBP_05DEG_DAILY_V4R4B": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "ECCO_L4_OCEAN_VEL_05DEG_DAILY_V4R4": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "ECCO_L4_SSH_05DEG_DAILY_V4R4B": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "ECCO_L4_TEMP_SALINITY_05DEG_DAILY_V4R4": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-    "TELLUS_GRAC-GRFO_MASCON_CRI_GRID_RL06.3_V4": {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    },
-}
-
-
-def _preprocess_expand_time_dim(ds):
-    return ds.expand_dims("time") if "time" not in ds.dims else ds
-
-
-def _preprocess_time_from_filename(ds):
-    import re
-    source = ds.encoding.get("source", "") or ""
-    match = re.search(r"NeurOST_SSH-SST_(\d{8})_", source)
-    if match:
-        date = np.datetime64(f"{match.group(1)[:4]}-{match.group(1)[4:6]}-{match.group(1)[6:8]}")
-    else:
-        date = ds["time"].values.flat[0] if "time" in ds.coords else np.datetime64("NaT")
-    ds = ds.assign_coords(time=[date])
-    return ds
-
-
-PREPROCESS_FUNCTIONS = {
-    "expand-time-dim": _preprocess_expand_time_dim,
-    "time-from-filename": _preprocess_time_from_filename,
-}
-
-
-def get_collection_config(collection):
-    if collection in COLLECTION_CONFIG:
-        return COLLECTION_CONFIG[collection]
-    return {
-        "concat_dim": "time",
-        "data_vars": "minimal",
-        "coords": "minimal",
-    }
 
 
 _ssm_client = None
@@ -176,31 +90,6 @@ def login_earthdata():
         )
 
     return earthaccess.login(strategy="environment")
-
-
-BUCKET_TO_HOST = {
-    "podaac-swot-ops-cumulus-protected": "archive.swot.podaac.earthdata.nasa.gov",
-    "podaac-swot-ops-cumulus-public": "archive.swot.podaac.earthdata.nasa.gov",
-}
-DEFAULT_HTTPS_HOST = "archive.podaac.earthdata.nasa.gov"
-
-
-def s3_to_https_url(s3_url):
-    """Convert s3://bucket/key to https://archive.podaac.earthdata.nasa.gov/bucket/key"""
-    if not s3_url.startswith("s3://"):
-        return s3_url
-    raw_path = s3_url.replace("s3://", "")
-    bucket_name = raw_path.split("/", 1)[0]
-    host = BUCKET_TO_HOST.get(bucket_name, DEFAULT_HTTPS_HOST)
-    return f"https://{host}/{raw_path}"
-
-
-def get_store_prefix_s3(collection):
-    return f"virtual_collections/{collection}/{collection}_icechunk_v2.s3/"
-
-
-def get_store_prefix_https(collection):
-    return f"virtual_collections/{collection}/{collection}_icechunk_v2.https/"
 
 
 def open_repo(bucket, prefix, vcc_url_prefix, vcc_store):
@@ -351,8 +240,7 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
     data_vars = config["data_vars"]
     coords = config["coords"]
     sort = config.get("sort", False)
-    preprocess_name = config.get("preprocess")
-    preprocess_fn = PREPROCESS_FUNCTIONS.get(preprocess_name) if preprocess_name else None
+    preprocess_fn = get_preprocess_fn(config)
 
     logger.info("[%s] Building VDS for %d granule(s)...", collection, len(granule_urls))
     vds_s3, source_bucket = build_vds(
@@ -381,7 +269,7 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
     https_host = BUCKET_TO_HOST.get(source_bucket, DEFAULT_HTTPS_HOST)
     vcc_https_prefix = f"https://{https_host}/{source_bucket}/"
 
-    vds_https = vds_s3.vz.rename_paths(s3_to_https_url)
+    vds_https = vds_s3.vz.rename_paths(s3_to_http_url)
     _append_to_store(
         collection, vds_https, store_bucket, https_prefix,
         vcc_url_prefix=vcc_https_prefix,
