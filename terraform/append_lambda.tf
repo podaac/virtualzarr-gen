@@ -124,13 +124,13 @@ resource "aws_lambda_function" "append_granule" {
       # will REMOVE any manually-added EARTHDATA_* vars. To make them persist,
       # wire var.edl_* here (see variables.tf) or switch to SSM params.
     }
+  }
 
-    # Manual EARTHDATA_* env vars set outside terraform would otherwise be wiped
-    # on every apply; ignore env changes so they survive until we manage creds
-    # here properly.
-    lifecycle {
-      ignore_changes = [environment]
-    }
+  # Manual EARTHDATA_* env vars set outside terraform would otherwise be wiped
+  # on every apply; ignore env changes so they survive until we manage creds
+  # here properly.
+  lifecycle {
+    ignore_changes = [environment]
   }
 
   vpc_config {
