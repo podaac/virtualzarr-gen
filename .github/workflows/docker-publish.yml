@@ -119,6 +119,7 @@ jobs:
         uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09 # v5.0.0
         with:
           context: .
+          target: ecs
           platforms: linux/amd64
           #platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}

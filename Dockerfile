@@ -34,6 +34,10 @@ RUN chmod 755 wrapper.sh
 ENTRYPOINT ["/opt/cloud-optimized/wrapper.sh"]
 
 # --- Lambda target (append) ---
+# NOTE: this is the LAST stage, so an unpinned `docker build` defaults to it.
+# All builds must pin their stage: CI ECS image uses `--target ecs`
+# (.github/workflows/docker-publish.yml), the append Lambda uses `--target lambda`
+# (terraform/append_lambda.tf + terraform-deploy.yml). Do not rely on the default.
 FROM base AS lambda
 
 RUN /opt/venv-icechunk/bin/pip install --no-cache-dir awslambdaric
