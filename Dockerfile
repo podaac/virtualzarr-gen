@@ -40,7 +40,9 @@ ENTRYPOINT ["/opt/cloud-optimized/wrapper.sh"]
 # (terraform/append_lambda.tf + terraform-deploy.yml). Do not rely on the default.
 FROM base AS lambda
 
-RUN /opt/venv-icechunk/bin/pip install --no-cache-dir awslambdaric
+# boto3 is used by the handler (SSM); it is NOT bundled in this custom image the
+# way it is in AWS-managed Lambda base images, so install it explicitly.
+RUN /opt/venv-icechunk/bin/pip install --no-cache-dir awslambdaric boto3
 
 # collection_config lives inside the podaac package (installed via -e in base)
 COPY append_lambda_handler.py ./

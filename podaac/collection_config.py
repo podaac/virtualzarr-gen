@@ -120,7 +120,6 @@ COLLECTION_CONFIG = {
         "n_workers": 32,
         "attrs": {
             "identifier_product_doi": "https://doi.org/10.5067/GHM25-4FJ42",
-            "date_created": "2026-09-03T00:00:00Z",
             "history": "Icechunk v2 VDS for MUR25",
         },
     },
@@ -130,49 +129,42 @@ COLLECTION_CONFIG = {
             "time_coverage_start": "1990-01-01T00:00:00Z",
             "time_coverage_end": "1999-12-31T00:00:00Z",
             "identifier_product_doi": "https://doi.org/10.5067/GHOST-4RM02",
-            "date_created": "2026-08-05T00:00:00Z",
             "history": "Icechunk v2  VDS for OSTIA",
         },
     },
     "CCMP_WINDS_10M6HR_L4_V3.1": {
         "n_workers": 64,
         "attrs": {
-            "date_created": "2026-09-03T00:00:00Z",
             "history": "Icechunk v2 VDS for CCMP Winds",
         },
     },
     "ECCO_L4_OBP_05DEG_DAILY_V4R4B": {
         "n_workers": 64,
         "attrs": {
-            "date_created": "2026-09-03T00:00:00Z",
             "history": "Icechunk v2 VDS for ECCO L4 OBP",
         },
     },
     "ECCO_L4_OCEAN_VEL_05DEG_DAILY_V4R4": {
         "n_workers": 64,
         "attrs": {
-            "date_created": "2026-09-03T00:00:00Z",
             "history": "Icechunk v2 VDS for ECCO L4 Ocean Velocity",
         },
     },
     "ECCO_L4_SSH_05DEG_DAILY_V4R4B": {
         "n_workers": 64,
         "attrs": {
-            "date_created": "2026-09-03T00:00:00Z",
             "history": "Icechunk v2 VDS for ECCO L4 SSH",
         },
     },
     "ECCO_L4_TEMP_SALINITY_05DEG_DAILY_V4R4": {
         "n_workers": 64,
         "attrs": {
-            "date_created": "2026-09-03T00:00:00Z",
             "history": "Icechunk v2 VDS for ECCO L4 Temp Salinity",
         },
     },
     "TELLUS_GRAC-GRFO_MASCON_CRI_GRID_RL06.3_V4": {
         "n_workers": 64,
         "attrs": {
-            "date_created": "2026-09-03T00:00:00Z",
             "history": "Icechunk v2 VDS for TELLUS GRACE/GRACE-FO Mascon",
         },
     },
@@ -181,7 +173,6 @@ COLLECTION_CONFIG = {
         "preprocess": "expand-time-dim",
         "n_workers": 64,
         "attrs": {
-            "date_created": "2026-09-03T00:00:00Z",
             "history": "Icechunk v2 VDS for SMAP RSS L3 SSS",
         },
     },
@@ -191,7 +182,6 @@ COLLECTION_CONFIG = {
         "sort": True,
         "n_workers": 64,
         "attrs": {
-            "date_created": "2026-09-03T00:00:00Z",
             "history": "Icechunk v2 VDS for NEUROST SSH-SST",
         },
     },
