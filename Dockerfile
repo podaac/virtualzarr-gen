@@ -38,7 +38,8 @@ FROM base AS lambda
 
 RUN /opt/venv-icechunk/bin/pip install --no-cache-dir awslambdaric
 
-COPY append_lambda_handler.py collection_config.py ./
+# collection_config lives inside the podaac package (installed via -e in base)
+COPY append_lambda_handler.py ./
 
 ENTRYPOINT ["/opt/venv-icechunk/bin/python", "-m", "awslambdaric"]
 CMD ["append_lambda_handler.handler"]

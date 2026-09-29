@@ -1,9 +1,12 @@
 """
 Single source of truth for per-collection Icechunk v2 settings.
 
-Both the initial store *generation* (generate_icechunk.py) and the *append*
-pipeline (append_lambda_handler.py, sqs_append_granules.py, append_granules.py)
-import from here so a collection's handling is defined in exactly one place.
+Both the initial store *generation* (podaac/generate_vds_icechunk.py) and the
+*append* pipeline (append_lambda_handler.py, sqs_append_granules.py) import from
+here so a collection's handling is defined in exactly one place.
+
+CLI arguments (and the trigger task's env overrides) take precedence over these
+values; these are the defaults used when nothing is passed explicitly.
 
 Schema (all fields optional except concat_dim/data_vars/coords, which have
 defaults via get_collection_config):

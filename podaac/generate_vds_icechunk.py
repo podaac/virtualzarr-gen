@@ -17,7 +17,6 @@ from urllib.parse import urlparse
 
 import earthaccess
 import icechunk
-import numpy as np
 import xarray as xr
 from dask.distributed import Client, LocalCluster
 from obstore.auth.earthdata import NasaEarthdataCredentialProvider
@@ -26,48 +25,20 @@ from obspec_utils.registry import ObjectStoreRegistry
 from virtualizarr.parsers import HDFParser
 import virtualizarr as vz
 
-
-SWOT_ENDPOINT = "https://archive.swot.podaac.earthdata.nasa.gov/s3credentials"
-
-
-def _preprocess_expand_time_dim(ds):
-    return ds.expand_dims("time") if "time" not in ds.dims else ds
-
-
-def _preprocess_time_from_filename(ds):
-    import re
-    source = ds.encoding.get("source", "") or ""
-    match = re.search(r"NeurOST_SSH-SST_(\d{8})_", source)
-    if match:
-        date = np.datetime64(f"{match.group(1)[:4]}-{match.group(1)[4:6]}-{match.group(1)[6:8]}")
-    else:
-        date = ds["time"].values.flat[0] if "time" in ds.coords else np.datetime64("NaT")
-    ds = ds.assign_coords(time=[date])
-    return ds
+from podaac.collection_config import (
+    PREPROCESS_FUNCTIONS,
+    credentials_endpoint_for_bucket,
+    get_collection_config,
+    get_store_prefix_https,
+    get_store_prefix_s3,
+    s3_to_http_url,
+)
 
 
-PREPROCESS_FUNCTIONS = {
-    "expand-time-dim": _preprocess_expand_time_dim,
-    "time-from-filename": _preprocess_time_from_filename,
-}
-
-COLLECTION_OVERRIDES = {
-    "SMAP_RSS_L3_SSS_SMI_8DAY-RUNNINGMEAN_V6": {
-        "preprocess": "expand-time-dim",
-        "data_vars": [
-            "sss_smap", "sss_smap_unc", "sss_smap_40km", "sss_smap_40km_unc",
-            "sss_smap_RF", "sss_smap_RF_unc", "sss_ref", "gland", "fland",
-            "gice_est", "surtep", "winspd", "nobs", "nobs_40km", "nobs_RF",
-            "sea_ice_zones",
-        ],
-    },
-    "NEUROST_SSH-SST_L4_V2024.0": {
-        "preprocess": "time-from-filename",
-        "coords": "all",
-        "sort_by": "time",
-    },
-}
-
+# Search-only overrides for collections that require multiple granule-name
+# queries (SWOT crossing processing-version boundaries). Kept here because this
+# is about *searching* granules, not per-collection data handling (which lives
+# in collection_config.COLLECTION_CONFIG).
 SPECIAL_COLLECTION_SEARCHES = {
     "SWOT_L2_LR_SSH_Basic_2.0": [
         {
@@ -122,11 +93,6 @@ def get_temporal_range(start_date, end_date):
     if is_valid_date(start_date) or is_valid_date(end_date):
         return (start_date, end_date)
     return None
-
-
-def s3_to_http_url(old_s3_path: str) -> str:
-    https_base = "https://archive.podaac.earthdata.nasa.gov/"
-    return str(https_base + old_s3_path.split("//")[-1])
 
 
 def search_granules(collection, temporal):
@@ -194,16 +160,6 @@ def create_icechunk_repo_httpaccess(output_bucket: str, prefix: str, vcc_http_ba
     return icechunk.Repository.create(storage, config)
 
 
-def build_output_names(collection, start_date, end_date):
-    temporal_str = ""
-    if is_valid_date(start_date) or is_valid_date(end_date):
-        start = start_date if is_valid_date(start_date) else "beginning"
-        end = end_date if is_valid_date(end_date) else "present"
-        temporal_str = f"{start}_to_{end}_"
-    base = f"{collection}_{temporal_str}"
-    return f"{base}icechunk_v2.s3", f"{base}icechunk_v2.https"
-
-
 def main(
     collection,
     loadable_coord_vars,
@@ -212,9 +168,9 @@ def main(
     output_bucket,
     debug=False,
     level_2_data=False,
-    cpu_count=16,
-    memory_limit="12GB",
-    batch_size=48,
+    cpu_count=None,
+    memory_limit=None,
+    batch_size=None,
     preprocess=None,
     data_vars=None,
     coords=None,
@@ -222,16 +178,25 @@ def main(
 ):
     setup_logging(debug)
 
-    # Merge collection-specific overrides with CLI args (CLI wins)
-    overrides = COLLECTION_OVERRIDES.get(collection, {})
+    # Per-collection settings come from the shared collection_config; any value
+    # passed on the CLI (or by the trigger task via wrapper.sh) wins over it, and
+    # collection_config in turn wins over the built-in DEFAULT_CONFIG. This is the
+    # single source of truth shared with the append pipeline.
+    config = get_collection_config(collection)
     if preprocess is None:
-        preprocess = overrides.get("preprocess")
+        preprocess = config["preprocess"]
     if data_vars is None:
-        data_vars = overrides.get("data_vars", "minimal")
+        data_vars = config["data_vars"]
     if coords is None:
-        coords = overrides.get("coords", "minimal")
-    if sort_by is None:
-        sort_by = overrides.get("sort_by")
+        coords = config["coords"]
+    if sort_by is None and config["sort"]:
+        sort_by = config["concat_dim"]
+    if cpu_count is None:
+        cpu_count = config["n_workers"]
+    if memory_limit is None:
+        memory_limit = config["memory_limit"]
+    if batch_size is None:
+        batch_size = config["batch_size"]
 
     preprocess_fn = PREPROCESS_FUNCTIONS.get(preprocess) if preprocess else None
 
@@ -263,10 +228,11 @@ def main(
         logging.warning("No direct-access S3 links found. Exiting.")
         sys.exit(0)
 
-    # Setup obstore registry for S3 access
-    credentials_endpoint = "https://archive.podaac.earthdata.nasa.gov/s3credentials"
+    # Setup obstore registry for S3 access. The credentials endpoint follows the
+    # archive host of the source bucket (e.g. SWOT buckets use a different host).
     parsed_url = urlparse(data_s3links[0])
     bucket = parsed_url.netloc
+    credentials_endpoint = credentials_endpoint_for_bucket(bucket)
 
     s3_store = S3Store(
         bucket=bucket,
@@ -290,7 +256,7 @@ def main(
     logging.info("Dask client: %s", client)
     client.run(silence_worker_warnings_and_auth, auth.token["access_token"])
 
-    concat_dim = "granule" if level_2_data else "time"
+    concat_dim = "granule" if level_2_data else config["concat_dim"]
 
     try:
         xr_combine_kwargs = {
@@ -383,14 +349,17 @@ def main(
         vds_s3.attrs['date_created'] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         vds_s3.attrs['history'] = f"Icechunk v2 VDS for {collection}"
 
+        # Overlay any collection-configured attrs (DOI, fixed time_coverage, etc.)
+        # on top of the dynamically-derived ones; config values win.
+        for key, value in config["attrs"].items():
+            vds_s3.attrs[key] = value
+
         # Create HTTP version
         vds_http = vds_s3.vz.rename_paths(s3_to_http_url)
 
-        # Write to S3-native Icechunk stores
-        fname_s3, fname_http = build_output_names(collection, start_date, end_date)
-        base_prefix = f"virtual_collections/{collection}/"
-
-        s3_prefix = f"{base_prefix}{fname_s3}/"
+        # Write to S3-native Icechunk stores. Store prefixes come from the shared
+        # helpers so the append pipeline opens exactly what generation writes.
+        s3_prefix = get_store_prefix_s3(collection)
         logging.info("Creating S3 Icechunk store: s3://%s/%s", output_bucket, s3_prefix)
         repo_s3 = create_icechunk_repo_s3access(output_bucket, s3_prefix, "s3://" + bucket)
         session_s3 = repo_s3.writable_session("main")
@@ -398,7 +367,7 @@ def main(
         session_s3.commit("Initial commit.")
         logging.info("S3 store committed.")
 
-        http_prefix = f"{base_prefix}{fname_http}/"
+        http_prefix = get_store_prefix_https(collection)
         logging.info("Creating HTTP Icechunk store: s3://%s/%s", output_bucket, http_prefix)
         repo_http = create_icechunk_repo_httpaccess(
             output_bucket,
@@ -410,7 +379,10 @@ def main(
         session_http.commit("Initial commit.")
         logging.info("HTTP store committed.")
 
-        logging.info("Icechunk stores written to s3://%s/%s", output_bucket, base_prefix)
+        logging.info(
+            "Icechunk stores written to s3://%s/virtual_collections/%s/",
+            output_bucket, collection,
+        )
 
     finally:
         logging.info("Shutting down Dask cluster...")
@@ -452,9 +424,9 @@ def cli():
         default=False,
         help="Indicate if processing level 2 data",
     )
-    parser.add_argument("--cpu-count", type=int, default=16, help="Number of Dask workers")
-    parser.add_argument("--memory-limit", type=str, default="12GB", help="Memory limit per Dask worker")
-    parser.add_argument("--batch-size", type=int, default=48, help="Batch size for processing")
+    parser.add_argument("--cpu-count", type=int, default=None, help="Number of Dask workers (default: from collection_config)")
+    parser.add_argument("--memory-limit", type=str, default=None, help="Memory limit per Dask worker (default: from collection_config)")
+    parser.add_argument("--batch-size", type=int, default=None, help="Batch size for processing (default: from collection_config)")
     parser.add_argument(
         "--output-bucket",
         type=str,

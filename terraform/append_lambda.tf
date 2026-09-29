@@ -83,7 +83,7 @@ resource "null_resource" "append_lambda_image" {
   triggers = {
     dockerfile_hash = filesha256("${path.module}/../Dockerfile")
     handler_hash    = filesha256("${path.module}/../append_lambda_handler.py")
-    config_hash     = filesha256("${path.module}/../collection_config.py")
+    config_hash     = filesha256("${path.module}/../podaac/collection_config.py")
     repo_url        = aws_ecr_repository.append_lambda.repository_url
     tag             = var.app_version
   }

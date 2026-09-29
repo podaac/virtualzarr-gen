@@ -50,7 +50,7 @@ from obspec_utils.registry import ObjectStoreRegistry
 from virtualizarr.parsers import HDFParser
 import virtualizarr as vz
 
-from collection_config import (
+from podaac.collection_config import (
     BUCKET_TO_HOST,
     DEFAULT_HTTPS_HOST,
     get_collection_config,
