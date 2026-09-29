@@ -71,3 +71,28 @@ variable "ssm_edl_token_name" {
   type        = string
   default     = ""
 }
+
+# Direct EDL credentials (temporary alternative to SSM). Set via tfvars or
+# TF_VAR_edl_* env vars. If provided, the append Lambda uses these directly.
+# NOTE: these end up in terraform state in plaintext; prefer SSM for anything
+# long-lived.
+variable "edl_username" {
+  description = "Earthdata (EDL) username set directly on the append Lambda."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "edl_password" {
+  description = "Earthdata (EDL) password set directly on the append Lambda."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "edl_token" {
+  description = "Earthdata (EDL) token set directly on the append Lambda. Takes precedence over username/password."
+  type        = string
+  default     = ""
+  sensitive   = true
+}

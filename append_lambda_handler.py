@@ -72,12 +72,22 @@ def login_earthdata():
     finally falls back to whatever is already in the environment. Injecting the
     SSM values into the environment lets earthaccess pick them up and also makes
     the token available to Dask/obstore credential providers.
+
+    SSM lookups are best-effort: if a configured parameter is missing (e.g. the
+    stage has no SSM params yet), we log and fall back to EARTHDATA_* env vars
+    set directly on the Lambda rather than failing the whole invocation.
     """
     if SSM_EDL_TOKEN:
-        os.environ["EARTHDATA_TOKEN"] = _get_ssm_parameter(SSM_EDL_TOKEN)
+        try:
+            os.environ["EARTHDATA_TOKEN"] = _get_ssm_parameter(SSM_EDL_TOKEN)
+        except Exception as exc:
+            logger.warning("Could not read SSM token param %r: %s; falling back to env creds.", SSM_EDL_TOKEN, exc)
     if SSM_EDL_USERNAME and SSM_EDL_PASSWORD:
-        os.environ["EARTHDATA_USERNAME"] = _get_ssm_parameter(SSM_EDL_USERNAME)
-        os.environ["EARTHDATA_PASSWORD"] = _get_ssm_parameter(SSM_EDL_PASSWORD)
+        try:
+            os.environ["EARTHDATA_USERNAME"] = _get_ssm_parameter(SSM_EDL_USERNAME)
+            os.environ["EARTHDATA_PASSWORD"] = _get_ssm_parameter(SSM_EDL_PASSWORD)
+        except Exception as exc:
+            logger.warning("Could not read SSM EDL user/pass params: %s; falling back to env creds.", exc)
 
     if not (
         os.environ.get("EARTHDATA_TOKEN")
