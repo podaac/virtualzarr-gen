@@ -34,6 +34,14 @@ from obspec_utils.registry import ObjectStoreRegistry
 from virtualizarr.parsers import HDFParser
 import virtualizarr as vz
 
+from icechunk_append import read_store_coordinate, build_write_plan, apply_write_plan
+from source_url_coord import (
+    url_map_from_granules,
+    retire_moved_urls,
+    reconcile_source_urls,
+    read_source_url_map,
+)
+
 
 def setup_logging(debug=False):
     logging.basicConfig(
@@ -180,25 +188,78 @@ def main():
         logging.info("New VDS shape: %s", dict(vds.sizes))
         logging.info("New VDS:\n%s", vds)
 
-        if args.dry_run:
-            logging.info("Dry run — skipping store write.")
-            return
-
         vcc_bucket = f"s3://{source_bucket}"
         repo = open_repo_s3(args.store_bucket, args.store_prefix, vcc_bucket)
         logging.info("Opened S3 store: s3://%s/%s", args.store_bucket, args.store_prefix)
 
         session = repo.writable_session("main")
 
-        existing_ds = xr.open_zarr(session.store, consolidated=False)
-        logging.info("Existing store shape: %s", dict(existing_ds.sizes))
-        existing_ds.close()
+        # Map each incoming granule URL to its (encoded) concat-dim value. The
+        # URL is the stable identity across reprocessing; the time can change.
+        url_map = url_map_from_granules(
+            granule_urls, auth, concat_dim=args.concat_dim,
+            data_vars=args.data_vars, coords=args.coords,
+        )
 
-        logging.info("Appending along '%s'...", args.concat_dim)
-        vds.vz.to_icechunk(session.store, append_dim=args.concat_dim)
+        existing = read_store_coordinate(session.store, args.concat_dim)
+        if existing is not None and existing.size:
+            logging.info(
+                "Existing store '%s' extent: %d step(s), min=%r max=%r",
+                args.concat_dim, existing.size, existing.min(), existing.max(),
+            )
+        else:
+            logging.info("Store has no '%s' coordinate yet.", args.concat_dim)
+
+        plan = build_write_plan(vds, existing, dimension=args.concat_dim)
+        logging.info(
+            "Write plan [%s]: %d new, %d already-present granule(s)",
+            plan.mode, plan.n_new, plan.n_region,
+        )
+
+        if args.dry_run:
+            # Report any granule that would be a SHIFTED-time move (same URL
+            # already in the store at a different time) without touching it.
+            stored = read_source_url_map(session.store, args.concat_dim)
+            incoming_times = {}
+            for t, u in url_map.items():
+                incoming_times.setdefault(u, set()).add(t)
+            moved = [
+                (t_old, u) for t_old, u in stored.items()
+                if u in incoming_times and t_old not in incoming_times[u]
+            ]
+            if moved:
+                logging.info("Dry run — %d granule(s) would move (same URL, new "
+                             "time): %s", len(moved), moved)
+            logging.info("Dry run — skipping store write.")
+            return
+
+        # If a granule was reprocessed with a SHIFTED time (same URL, new time),
+        # drop the stale step first so the write is a move, not a duplicate.
+        # No-op unless the store already carries source_url.
+        retired = retire_moved_urls(session, url_map, concat_dim=args.concat_dim)
+        if retired["n_retired"]:
+            logging.info("Retired %d moved granule step(s) at %s=%s",
+                         retired["n_retired"], args.concat_dim, retired["retired"])
+            # existing axis changed; re-read so the plan reflects the removal
+            existing = read_store_coordinate(session.store, args.concat_dim)
+            plan = build_write_plan(vds, existing, dimension=args.concat_dim)
+
+        if plan.is_empty and not retired["n_retired"]:
+            logging.info("Nothing to write — no commit made.")
+            return
+
+        if not plan.is_empty:
+            apply_write_plan(session, vds, plan)
+
+        # Record/refresh the time -> URL link for everything just written.
+        reconcile_source_urls(session, url_map, concat_dim=args.concat_dim)
 
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        commit_msg = f"Append {len(granule_urls)} granule(s) at {timestamp}"
+        retired_note = f", {retired['n_retired']} moved" if retired["n_retired"] else ""
+        commit_msg = (
+            f"{plan.mode} {plan.n_new} new, {plan.n_region} in-place{retired_note} "
+            f"granule(s) at {timestamp}"
+        )
         session.commit(commit_msg)
         logging.info("Committed: %s", commit_msg)
 

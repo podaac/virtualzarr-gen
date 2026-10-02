@@ -50,6 +50,13 @@ from obspec_utils.registry import ObjectStoreRegistry
 from virtualizarr.parsers import HDFParser
 import virtualizarr as vz
 
+from icechunk_append import read_store_coordinate, build_write_plan, apply_write_plan
+from source_url_coord import (
+    url_map_from_granules,
+    retire_moved_urls,
+    reconcile_source_urls,
+)
+
 from podaac.collection_config import (
     BUCKET_TO_HOST,
     DEFAULT_HTTPS_HOST,
@@ -205,43 +212,62 @@ def append_to_collection(collection, granule_urls, store_bucket, auth):
 
     session = repo.writable_session("main")
 
-    existing_ds = xr.open_zarr(session.store, consolidated=False)
-    existing_max = None
-    if concat_dim in existing_ds.coords and existing_ds.sizes.get(concat_dim, 0) > 0:
-        existing_max = np.asarray(existing_ds[concat_dim].values).max()
-    logging.info("[%s] Existing shape: %s", collection, dict(existing_ds.sizes))
+    # Map each incoming granule URL to its (encoded) time value, reading the
+    # granule with this module's own SWOT-aware build_vds (and the collection's
+    # preprocess). The URL is the stable identity across reprocessing; time can
+    # change.
+    def _build_vds_fn(urls, a, **kw):
+        return build_vds(urls, a, preprocess_fn=preprocess_fn, **kw)
 
-    # Idempotency: drop any granules whose concat-dim value is already present.
-    vds_new = _filter_new_along_dim(vds, existing_ds, concat_dim)
-    existing_ds.close()
+    url_map = url_map_from_granules(
+        granule_urls, auth, concat_dim=concat_dim,
+        build_vds_fn=_build_vds_fn, data_vars=data_vars, coords=coords,
+    )
 
-    n_new = int(vds_new.sizes.get(concat_dim, 0))
-    if n_new == 0:
-        logging.info("[%s] Nothing new to append (all values already present).", collection)
+    # If a granule was reprocessed with its time SHIFTED (same URL, new time),
+    # drop the old step first so the write becomes a move, not a duplicate. This
+    # only matches when the store already carries source_url; otherwise it is a
+    # no-op. Runs before read_store_coordinate so the plan sees the removal.
+    retired = retire_moved_urls(session, url_map, concat_dim=concat_dim)
+    if retired["n_retired"]:
+        logging.info("[%s] Retired %d moved granule step(s) at %s=%s",
+                     collection, retired["n_retired"], concat_dim, retired["retired"])
+
+    # read_store_coordinate opens the store with decode_times=False so the raw
+    # encoded values compare like-for-like with the incoming vds.
+    existing = read_store_coordinate(session.store, concat_dim)
+    logging.info(
+        "[%s] Existing '%s' extent: %d step(s)",
+        collection, concat_dim, 0 if existing is None else existing.size,
+    )
+
+    plan = build_write_plan(vds, existing, dimension=concat_dim)
+    logging.info(
+        "[%s] Write plan [%s]: %d new, %d already-present granule(s)",
+        collection, plan.mode, plan.n_new, plan.n_region,
+    )
+
+    if plan.is_empty and not retired["n_retired"]:
+        logging.info("[%s] Nothing to write.", collection)
         return
 
-    # Icechunk append only concatenates; it does not reorder. Warn if this would
-    # break monotonicity along the append dimension.
-    if existing_max is not None and concat_dim in vds_new.coords:
-        incoming_min = np.asarray(vds_new[concat_dim].values).min()
-        if incoming_min <= existing_max:
-            logging.warning(
-                "[%s] Incoming %s min (%s) <= existing max (%s); append will produce "
-                "non-monotonic %s.", collection, concat_dim, incoming_min, existing_max, concat_dim,
-            )
+    if not plan.is_empty:
+        apply_write_plan(session, vds, plan)
 
-    if sort:
-        vds_new = vds_new.sortby(concat_dim)
-
-    vds_new.vz.to_icechunk(session.store, append_dim=concat_dim)
+    # Record/refresh the time -> URL link for everything just written.
+    reconcile_source_urls(session, url_map, concat_dim=concat_dim)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    commit_msg = f"Append {n_new} granule(s) at {timestamp}"
+    retired_note = f", {retired['n_retired']} moved" if retired["n_retired"] else ""
+    commit_msg = (
+        f"{plan.mode} {plan.n_new} new, {plan.n_region} in-place{retired_note} "
+        f"granule(s) at {timestamp}"
+    )
     session.commit(commit_msg)
     logging.info("[%s] Committed: %s", collection, commit_msg)
 
     verify_session = repo.readonly_session(branch="main")
-    verify_ds = xr.open_zarr(verify_session.store, consolidated=False)
+    verify_ds = xr.open_zarr(verify_session.store, consolidated=False, decode_times=False)
     logging.info("[%s] Verified shape: %s", collection, dict(verify_ds.sizes))
     verify_ds.close()
 

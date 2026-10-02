@@ -31,6 +31,13 @@ from obspec_utils.registry import ObjectStoreRegistry
 from virtualizarr.parsers import HDFParser
 import virtualizarr as vz
 
+from icechunk_append import read_store_coordinate, build_write_plan, apply_write_plan
+from source_url_coord import (
+    url_map_from_granules,
+    retire_moved_urls,
+    reconcile_source_urls,
+)
+
 from podaac.collection_config import (
     BUCKET_TO_HOST,
     DEFAULT_HTTPS_HOST,
@@ -193,50 +200,62 @@ def _filter_new_along_dim(vds, existing_ds, concat_dim):
 
 
 def _append_to_store(collection, vds, store_bucket, store_prefix, vcc_url_prefix,
-                     vcc_store, concat_dim, store_type, sort=False):
-    """Append a VDS to a single Icechunk store. Returns count appended."""
+                     vcc_store, concat_dim, store_type, sort=False, url_map=None):
+    """Append a VDS to a single Icechunk store. Returns count appended.
+
+    ``url_map`` maps each incoming concat-dim value to the source URL *as it
+    appears in this store's manifest* (s3:// for the S3 store, https:// for the
+    HTTPS store). When given, a granule reprocessed with a shifted time (same
+    URL, new time) retires its stale step first, and the time->URL link is
+    recorded in a ``source_url`` coordinate.
+    """
     logger.info("[%s][%s] Opening store: s3://%s/%s", collection, store_type, store_bucket, store_prefix)
     repo = open_repo(store_bucket, store_prefix, vcc_url_prefix, vcc_store)
 
     session = repo.writable_session("main")
 
-    # Open undecoded: the incoming vds uses decode_times=False (raw encoded
-    # ints), and the store holds the same raw values. Decoding the existing
-    # side to datetime64 would make the idempotency filter and monotonicity
-    # check compare int vs datetime64 and raise DTypePromotionError.
-    existing_ds = xr.open_zarr(session.store, consolidated=False, decode_times=False)
-    existing_max = None
-    if concat_dim in existing_ds.coords and existing_ds.sizes.get(concat_dim, 0) > 0:
-        existing_max = np.asarray(existing_ds[concat_dim].values).max()
-    logger.info("[%s][%s] Existing shape: %s", collection, store_type, dict(existing_ds.sizes))
+    # Retire stale steps for shifted-time reprocessing before planning, so the
+    # plan reflects the removal. No-op unless the store already has source_url.
+    retired = {"n_retired": 0, "retired": []}
+    if url_map:
+        retired = retire_moved_urls(session, url_map, concat_dim=concat_dim)
+        if retired["n_retired"]:
+            logger.info("[%s][%s] Retired %d moved granule step(s) at %s=%s",
+                        collection, store_type, retired["n_retired"],
+                        concat_dim, retired["retired"])
 
-    # Idempotency: drop any granules whose concat-dim value is already present.
-    vds_new = _filter_new_along_dim(vds, existing_ds, concat_dim)
-    existing_ds.close()
+    # read_store_coordinate opens the store with decode_times=False so the raw
+    # encoded values compare like-for-like with the incoming vds.
+    existing = read_store_coordinate(session.store, concat_dim)
+    logger.info(
+        "[%s][%s] Existing '%s' extent: %d step(s)",
+        collection, store_type, concat_dim,
+        0 if existing is None else existing.size,
+    )
 
-    n_new = int(vds_new.sizes.get(concat_dim, 0))
-    if n_new == 0:
-        logger.info("[%s][%s] Nothing new to append (all values already present).", collection, store_type)
+    plan = build_write_plan(vds, existing, dimension=concat_dim)
+    logger.info(
+        "[%s][%s] Write plan [%s]: %d new, %d already-present granule(s)",
+        collection, store_type, plan.mode, plan.n_new, plan.n_region,
+    )
+
+    if plan.is_empty and not retired["n_retired"]:
+        logger.info("[%s][%s] Nothing to write.", collection, store_type)
         return 0
 
-    # Icechunk append only concatenates; it does not reorder. Warn loudly if the
-    # incoming data would break monotonicity along the append dimension.
-    if existing_max is not None and concat_dim in vds_new.coords:
-        incoming_min = np.asarray(vds_new[concat_dim].values).min()
-        if incoming_min <= existing_max:
-            logger.warning(
-                "[%s][%s] Incoming %s min (%s) <= existing max (%s); appending will "
-                "produce non-monotonic %s. Consider a rewrite for this collection.",
-                collection, store_type, concat_dim, incoming_min, existing_max, concat_dim,
-            )
+    if not plan.is_empty:
+        apply_write_plan(session, vds, plan)
+    n_new = plan.n_new
 
-    if sort:
-        vds_new = vds_new.sortby(concat_dim)
-
-    vds_new.vz.to_icechunk(session.store, append_dim=concat_dim)
+    if url_map:
+        reconcile_source_urls(session, url_map, concat_dim=concat_dim)
 
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    commit_msg = f"Append {n_new} granule(s) at {timestamp}"
+    retired_note = f", {retired['n_retired']} moved" if retired["n_retired"] else ""
+    commit_msg = (
+        f"{plan.mode} {plan.n_new} new, {plan.n_region} in-place{retired_note} "
+        f"granule(s) at {timestamp}"
+    )
     session.commit(commit_msg)
     logger.info("[%s][%s] Committed: %s", collection, store_type, commit_msg)
 
@@ -266,6 +285,18 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
     )
     logger.info("[%s] New VDS shape: %s", collection, dict(vds_s3.sizes))
 
+    # Map each incoming granule URL to its (encoded) concat-dim value, reading
+    # the granule with this handler's own build_vds (SWOT-aware credentials
+    # endpoint, same preprocess). The URL is the stable identity across
+    # reprocessing; the time can change.
+    def _build_vds_fn(urls, a, **kw):
+        return build_vds(urls, a, preprocess_fn=preprocess_fn, **kw)
+
+    url_map_s3 = url_map_from_granules(
+        granule_urls, auth, concat_dim=concat_dim,
+        build_vds_fn=_build_vds_fn, data_vars=data_vars, coords=coords,
+    )
+
     # S3 store
     s3_prefix = store_prefix_override or get_store_prefix_s3(collection)
     vcc_s3_prefix = f"s3://{source_bucket}/"
@@ -276,6 +307,7 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
         concat_dim=concat_dim,
         store_type="s3",
         sort=sort,
+        url_map=url_map_s3,
     )
 
     # HTTPS store
@@ -284,6 +316,8 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
     vcc_https_prefix = f"https://{https_host}/{source_bucket}/"
 
     vds_https = vds_s3.vz.rename_paths(s3_to_http_url)
+    # Same map, but URLs rewritten to match the HTTPS store's manifest paths.
+    url_map_https = {t: s3_to_http_url(u) for t, u in url_map_s3.items()}
     _append_to_store(
         collection, vds_https, store_bucket, https_prefix,
         vcc_url_prefix=vcc_https_prefix,
@@ -291,6 +325,7 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
         concat_dim=concat_dim,
         store_type="https",
         sort=sort,
+        url_map=url_map_https,
     )
 
 
