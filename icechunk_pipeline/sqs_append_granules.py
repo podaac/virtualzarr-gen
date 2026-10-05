@@ -49,8 +49,8 @@ from obspec_utils.registry import ObjectStoreRegistry
 from virtualizarr.parsers import HDFParser
 import virtualizarr as vz
 
-from icechunk_append import read_store_coordinate, build_write_plan, apply_write_plan
-from source_url_coord import (
+from icechunk_pipeline.icechunk_append import read_store_coordinate, build_write_plan, apply_write_plan
+from icechunk_pipeline.source_url_coord import (
     url_map_from_granules,
     retire_moved_urls,
     reconcile_source_urls,

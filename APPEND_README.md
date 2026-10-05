@@ -146,12 +146,12 @@ convention as the ECS `wrapper.sh`.
 |------|---------|
 | `terraform/cnm_transform_lambda.py` | Transform Lambda: parses CNM-R from SNS, sends formatted messages to SQS FIFO. |
 | `terraform/cnm_transform_lambda.tf` | Terraform: transform Lambda, SNS subscription, IAM. |
-| `append_lambda_handler.py` | Append Lambda: receives SQS events, appends granules to Icechunk stores. |
+| `icechunk_pipeline/append_lambda_handler.py` | Append Lambda: receives SQS events, appends granules to Icechunk stores. |
 | `terraform/append_lambda.tf` | Terraform: SQS FIFO queue, DLQ, container Lambda, IAM, event source mapping. |
-| `append_granules.py` | CLI tool to append granules to an Icechunk store (standalone usage). |
-| `test_e2e_setup_store.py` | Test: create a test Icechunk store with 5 granules. |
-| `test_e2e_send_sqs.py` | Test: send granule append messages to the SQS FIFO queue. |
-| `test_e2e_verify_store.py` | Test: verify/watch the store for updates. |
+| `icechunk_pipeline/append_granules.py` | CLI tool to append granules to an Icechunk store (standalone usage). |
+| `icechunk_pipeline/tests/test_e2e_setup_store.py` | Test: create a test Icechunk store with 5 granules. |
+| `icechunk_pipeline/tests/test_e2e_send_sqs.py` | Test: send granule append messages to the SQS FIFO queue. |
+| `icechunk_pipeline/tests/test_e2e_verify_store.py` | Test: verify/watch the store for updates. |
 
 ## Docker Build Targets
 

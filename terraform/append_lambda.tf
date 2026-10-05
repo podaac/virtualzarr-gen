@@ -82,7 +82,9 @@ resource "null_resource" "append_lambda_image" {
 
   triggers = {
     dockerfile_hash = filesha256("${path.module}/../Dockerfile")
-    handler_hash    = filesha256("${path.module}/../append_lambda_handler.py")
+    handler_hash    = filesha256("${path.module}/../icechunk_pipeline/append_lambda_handler.py")
+    append_hash     = filesha256("${path.module}/../icechunk_pipeline/icechunk_append.py")
+    source_url_hash = filesha256("${path.module}/../icechunk_pipeline/source_url_coord.py")
     config_hash     = filesha256("${path.module}/../podaac/collection_config.py")
     repo_url        = aws_ecr_repository.append_lambda.repository_url
     tag             = var.app_version

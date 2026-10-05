@@ -33,7 +33,7 @@ from podaac.collection_config import (
     get_store_prefix_s3,
     s3_to_http_url,
 )
-from source_url_coord import url_map_from_vds, reconcile_source_urls
+from icechunk_pipeline.source_url_coord import url_map_from_vds, reconcile_source_urls
 
 
 # Search-only overrides for collections that require multiple granule-name

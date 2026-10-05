@@ -18,7 +18,7 @@ from zarr.codecs import BytesCodec
 from zarr.core.dtype import parse_data_type
 from zarr.core.metadata import ArrayV3Metadata
 
-from icechunk_append import (
+from icechunk_pipeline.icechunk_append import (
     read_store_coordinate,
     build_write_plan,
     apply_write_plan,

@@ -37,9 +37,9 @@ from datetime import datetime, timezone
 import earthaccess
 import icechunk
 
-from sqs_append_granules import build_vds
-from icechunk_append import read_store_coordinate
-from source_url_coord import (
+from icechunk_pipeline.sqs_append_granules import build_vds
+from icechunk_pipeline.icechunk_append import read_store_coordinate
+from icechunk_pipeline.source_url_coord import (
     url_map_from_granules,
     reconcile_source_urls,
     read_source_url_map,

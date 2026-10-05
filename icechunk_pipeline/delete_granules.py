@@ -35,8 +35,8 @@ from datetime import datetime, timezone
 import earthaccess
 import numpy as np
 
-from append_granules import build_vds, open_repo_s3
-from icechunk_append import read_store_coordinate, delete_coordinates
+from icechunk_pipeline.append_granules import build_vds, open_repo_s3
+from icechunk_pipeline.icechunk_append import read_store_coordinate, delete_coordinates
 
 
 def map_urls_to_coordinates(urls, auth, concat_dim="time",

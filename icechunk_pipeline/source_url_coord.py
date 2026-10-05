@@ -64,7 +64,7 @@ import logging
 import numpy as np
 import zarr
 
-from icechunk_append import delete_coordinates
+from icechunk_pipeline.icechunk_append import delete_coordinates
 
 logger = logging.getLogger(__name__)
 

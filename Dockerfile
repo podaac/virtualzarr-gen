@@ -11,6 +11,10 @@ RUN pip install poetry
 # Kerchunk environment (default)
 COPY pyproject.toml poetry.lock* ./
 COPY podaac ./podaac
+# icechunk_pipeline is a declared package in pyproject; copy it before any
+# install so both the kerchunk `poetry install` and the icechunk editable
+# `pip install -e .` can find it. It carries the append Lambda handler too.
+COPY icechunk_pipeline ./icechunk_pipeline
 RUN python -m venv /opt/venv-kerchunk && \
     . /opt/venv-kerchunk/bin/activate && \
     poetry config virtualenvs.create false && \
@@ -44,8 +48,9 @@ FROM base AS lambda
 # way it is in AWS-managed Lambda base images, so install it explicitly.
 RUN /opt/venv-icechunk/bin/pip install --no-cache-dir awslambdaric boto3
 
-# collection_config lives inside the podaac package (installed via -e in base)
-COPY append_lambda_handler.py ./
+# The handler and everything it imports (icechunk_append, source_url_coord,
+# collection_config) ship in the icechunk_pipeline / podaac packages copied and
+# editable-installed in the base stage -- nothing extra to copy here.
 
 ENTRYPOINT ["/opt/venv-icechunk/bin/python", "-m", "awslambdaric"]
-CMD ["append_lambda_handler.handler"]
+CMD ["icechunk_pipeline.append_lambda_handler.handler"]

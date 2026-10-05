@@ -37,8 +37,8 @@ import icechunk
 import numpy as np
 import xarray as xr
 
-from append_granules import build_vds
-from icechunk_append import read_store_coordinate, build_write_plan, apply_write_plan
+from icechunk_pipeline.append_granules import build_vds
+from icechunk_pipeline.icechunk_append import read_store_coordinate, build_write_plan, apply_write_plan
 from podaac.collection_config import get_collection_config, get_preprocess_fn
 
 # positions (into the time-sorted granule list) written at each stage

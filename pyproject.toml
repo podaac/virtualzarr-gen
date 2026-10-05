@@ -6,6 +6,7 @@ authors = ["podaac-tva <podaac-tva@jpl.nasa.gov>"]
 
 packages = [
     { include = "podaac" },
+    { include = "icechunk_pipeline" },
 ]
 
 [tool.poetry.dependencies]
