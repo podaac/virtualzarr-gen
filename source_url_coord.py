@@ -108,6 +108,51 @@ def _key(value):
     return v
 
 
+def url_map_from_vds(vds, concat_dim="time"):
+    """Derive ``{concat-dim value: url}`` from a VDS's chunk manifest.
+
+    Unlike :func:`url_map_from_granules`, this reads nothing extra -- it recovers
+    each step's source URL from the virtual references already in ``vds`` (so it
+    is cheap at generation time, where the combined VDS is in hand). The step's
+    chunk position maps to the ``concat_dim`` value at that position, and the
+    manifest gives that chunk's source path.
+
+    Requires a data variable backed by a VirtualiZarr ``ManifestArray`` spanning
+    ``concat_dim`` with **chunk size 1 along that dimension** (one step per
+    chunk, as these per-granule stores use). Raises ``ValueError`` if no such
+    variable exists or the 1-chunk-per-step assumption does not hold (so the
+    mapping would be ambiguous). Safe to call after ``sortby`` -- the manifest
+    is reordered with the data.
+    """
+    if concat_dim in vds.coords:
+        coord = np.asarray(vds[concat_dim].values)
+    elif concat_dim in vds.dims:
+        coord = None  # index dimension with no materialized values
+    else:
+        raise ValueError(f"VDS has no '{concat_dim}' dimension")
+
+    for name, var in vds.variables.items():
+        manifest = getattr(getattr(var, "data", None), "manifest", None)
+        if manifest is None or concat_dim not in var.dims:
+            continue
+        axis = var.dims.index(concat_dim)
+        mapping = {}
+        for chunk_key, entry in manifest.dict().items():
+            pos = int(chunk_key.split(".")[axis])  # chunk index == step (size-1 chunks)
+            value = _key(coord[pos]) if coord is not None else pos
+            mapping[value] = entry["path"]
+        expected = int(coord.size) if coord is not None else var.sizes[concat_dim]
+        if len(mapping) != expected:
+            raise ValueError(
+                f"'{name}' maps {len(mapping)} step(s) but '{concat_dim}' has "
+                f"{expected}; chunk size along '{concat_dim}' is probably not 1, "
+                f"so a per-step source_url is ambiguous."
+            )
+        return mapping
+
+    raise ValueError(f"No manifest-backed variable spans '{concat_dim}'")
+
+
 def read_source_url_map(store, concat_dim="time"):
     """Return ``{concat-dim value: url}`` currently stored, or ``{}`` if none.
 

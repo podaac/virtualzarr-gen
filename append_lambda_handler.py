@@ -23,7 +23,6 @@ from urllib.parse import urlparse
 import boto3
 import earthaccess
 import icechunk
-import numpy as np
 import xarray as xr
 from obstore.auth.earthdata import NasaEarthdataCredentialProvider
 from obstore.store import S3Store
@@ -168,39 +167,8 @@ def build_vds(data_urls, auth, concat_dim="time", data_vars="minimal",
     return vds, bucket
 
 
-def _filter_new_along_dim(vds, existing_ds, concat_dim):
-    """Return the subset of vds whose concat-dim coordinate values are NOT
-    already present in existing_ds.
-
-    This is the idempotency guard: SQS delivers at-least-once, retries re-run
-    the whole batch, and the S3/HTTPS stores are committed separately (not
-    atomically). Filtering already-present coordinate values makes every
-    append a no-op if it has already been applied, so duplicates never appear.
-    """
-    if concat_dim not in vds.coords:
-        # No coordinate to dedup on; caller must accept possible duplicates.
-        logger.warning("Concat dim %r is not a coordinate; skipping idempotency filter.", concat_dim)
-        return vds
-
-    new_vals = np.asarray(vds[concat_dim].values)
-    existing_vals = (
-        np.asarray(existing_ds[concat_dim].values)
-        if concat_dim in existing_ds.coords
-        else np.array([], dtype=new_vals.dtype)
-    )
-    mask = ~np.isin(new_vals, existing_vals)
-    if mask.all():
-        return vds
-    kept = int(mask.sum())
-    logger.info(
-        "Idempotency filter: %d of %d incoming %s value(s) are new.",
-        kept, len(new_vals), concat_dim,
-    )
-    return vds.isel({concat_dim: np.where(mask)[0]})
-
-
 def _append_to_store(collection, vds, store_bucket, store_prefix, vcc_url_prefix,
-                     vcc_store, concat_dim, store_type, sort=False, url_map=None):
+                     vcc_store, concat_dim, store_type, url_map=None):
     """Append a VDS to a single Icechunk store. Returns count appended.
 
     ``url_map`` maps each incoming concat-dim value to the source URL *as it
@@ -272,7 +240,6 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
     concat_dim = config["concat_dim"]
     data_vars = config["data_vars"]
     coords = config["coords"]
-    sort = config.get("sort", False)
     preprocess_fn = get_preprocess_fn(config)
 
     logger.info("[%s] Building VDS for %d granule(s)...", collection, len(granule_urls))
@@ -306,7 +273,6 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
         vcc_store=icechunk.s3_store(region="us-west-2", anonymous=True),
         concat_dim=concat_dim,
         store_type="s3",
-        sort=sort,
         url_map=url_map_s3,
     )
 
@@ -324,7 +290,6 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
         vcc_store=icechunk.http_store(),
         concat_dim=concat_dim,
         store_type="https",
-        sort=sort,
         url_map=url_map_https,
     )
 

@@ -33,6 +33,7 @@ from podaac.collection_config import (
     get_store_prefix_s3,
     s3_to_http_url,
 )
+from source_url_coord import url_map_from_vds, reconcile_source_urls
 
 
 # Search-only overrides for collections that require multiple granule-name
@@ -371,6 +372,19 @@ def main(
         # Create HTTP version
         vds_http = vds_s3.vz.rename_paths(s3_to_http_url)
 
+        # Derive the time -> source URL map from the manifest already in the VDS
+        # (no extra granule reads). Written into each store as a materialized
+        # source_url coordinate so the append pipeline can retire a granule that
+        # is later reprocessed with a shifted time. Best-effort: never fail
+        # generation over it (e.g. multi-step-per-chunk collections, or a
+        # non-coordinate concat dim like level-2 "granule").
+        url_map_s3 = None
+        try:
+            url_map_s3 = url_map_from_vds(vds_s3, concat_dim=concat_dim)
+            logging.info("Derived source_url map for %d step(s).", len(url_map_s3))
+        except Exception as exc:
+            logging.warning("Skipping source_url (could not derive map): %s", exc)
+
         # Write to S3-native Icechunk stores. Store prefixes come from the shared
         # helpers so the append pipeline opens exactly what generation writes.
         s3_prefix = get_store_prefix_s3(collection)
@@ -378,6 +392,8 @@ def main(
         repo_s3 = create_icechunk_repo_s3access(output_bucket, s3_prefix, "s3://" + bucket)
         session_s3 = repo_s3.writable_session("main")
         vds_s3.virtualize.to_icechunk(session_s3.store)
+        if url_map_s3:
+            reconcile_source_urls(session_s3, url_map_s3, concat_dim=concat_dim)
         session_s3.commit("Initial commit.")
         logging.info("S3 store committed.")
 
@@ -390,6 +406,10 @@ def main(
         )
         session_http = repo_http.writable_session("main")
         vds_http.virtualize.to_icechunk(session_http.store)
+        if url_map_s3:
+            # Same steps, URLs rewritten to match the HTTP store's manifest.
+            url_map_http = {t: s3_to_http_url(u) for t, u in url_map_s3.items()}
+            reconcile_source_urls(session_http, url_map_http, concat_dim=concat_dim)
         session_http.commit("Initial commit.")
         logging.info("HTTP store committed.")
 
