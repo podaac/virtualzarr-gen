@@ -171,12 +171,40 @@ def build_write_plan(
     )
 
 
-def _region_write(session, vds: xr.Dataset, dim: str, positions) -> None:
-    """Write the given incoming positions one coordinate at a time, in place."""
+def _region_write(session, vds: xr.Dataset, dim: str, positions, axis_values) -> None:
+    """Write the given incoming positions one coordinate at a time, in place.
+
+    Each coordinate is placed by its *explicit integer index* on the store's
+    current axis (``axis_values``) rather than ``region="auto"``. Auto-detection
+    re-matches the incoming coordinate against the store's index with xarray's
+    pandas ``get_indexer``, which does not agree byte-for-byte with the
+    ``np.isin`` comparison :func:`build_write_plan` used to classify the write
+    (e.g. float ``time`` encodings) -- so a coordinate the plan called "present"
+    could fail auto-detection with "Not all values ... found in the original
+    store". Looking the value up in ``axis_values`` (the same value space the
+    plan compared) is exact and deterministic.
+
+    The region dimension coordinate and any variable that does not span ``dim``
+    (e.g. ``lat``/``lon``) are dropped before writing: a region write only
+    rewrites the data for that slot, and xarray refuses to write a dimension
+    coordinate (or a variable with no region dimension) into a region slice.
+    """
+    axis_values = np.asarray(axis_values)
     for p in positions:
         sub = vds.isel({dim: [int(p)]})
-        logger.info("region write %s=%r", dim, np.asarray(sub[dim].values)[0])
-        sub.vz.to_icechunk(session.store, region="auto")
+        value = np.asarray(sub[dim].values)[0]
+        matches = np.nonzero(axis_values == value)[0]
+        if matches.size == 0:
+            raise ValueError(
+                f"{dim}={value!r} classified as present but is not on the store "
+                f"axis; cannot region-write it."
+            )
+        idx = int(matches[0])
+        logger.info("region write %s=%r at index %d", dim, value, idx)
+        drop = [name for name in sub.variables if dim not in sub[name].dims or name == dim]
+        sub.drop_vars(drop).vz.to_icechunk(
+            session.store, region={dim: slice(idx, idx + 1)}
+        )
 
 
 def _time_axis_arrays(root, dim: str):
@@ -264,10 +292,10 @@ def _apply_insert(session, vds: xr.Dataset, plan: WritePlan) -> None:
         logger.info("reindex %s to open %d insert slot(s)", path, plan.n_new)
         session.reindex_array(path, forward=fwd, backward=bwd)
 
-    # Write the full sorted coordinate so region="auto" can place data by value.
+    # Write the full sorted coordinate so region writes can place data by index.
     root[dim][:] = np.asarray(target)
 
-    _region_write(session, vds, dim, plan.present_positions + plan.new_positions)
+    _region_write(session, vds, dim, plan.present_positions + plan.new_positions, target)
 
 
 def apply_write_plan(session, vds: xr.Dataset, plan: WritePlan) -> dict:
@@ -284,7 +312,8 @@ def apply_write_plan(session, vds: xr.Dataset, plan: WritePlan) -> dict:
         return {"mode": "insert", "n_region": plan.n_region, "n_new": plan.n_new}
 
     # Pure tail append (+ idempotent in-place writes for already-present coords).
-    _region_write(session, vds, dim, plan.present_positions)
+    # Present coords sit on the store's existing axis, unchanged by an append.
+    _region_write(session, vds, dim, plan.present_positions, plan.existing_values)
     if plan.n_new:
         block = vds.isel({dim: [int(p) for p in plan.new_positions]})
         if plan.existing_values is None:
