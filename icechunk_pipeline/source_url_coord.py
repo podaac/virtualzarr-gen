@@ -208,20 +208,41 @@ def reconcile_source_urls(session, new_map, concat_dim="time"):
         logger.warning("source_url: %d step(s) have no known URL: %s",
                        n_missing, missing_vals)
 
+    # Write incrementally. The array is chunked (1,) -- one chunk per step -- so
+    # rewriting the whole array (arr[:] = urls) would emit a fresh chunk object
+    # for every step on every commit, and Icechunk retains them all in history:
+    # storage then grows with appends x current-size. Instead we touch only the
+    # indices that actually change (new tail + any reprocessed step whose URL
+    # differs), leaving unchanged steps' existing chunks in place.
     if SOURCE_URL_VAR in array_names:
         arr = root[SOURCE_URL_VAR]
-        if arr.shape != (n,):
+        old_n = int(arr.shape[0])
+        old_vals = np.asarray(arr[:]) if old_n else np.array([], dtype=_STRING_DTYPE)
+        if old_n != n:
             arr.resize((n,))
+
+        n_written = 0
+        overlap = min(old_n, n)
+        if overlap:
+            changed = np.nonzero(old_vals[:overlap] != urls[:overlap])[0]
+            for i in changed:
+                arr[int(i)] = urls[int(i)]
+            n_written += int(changed.size)
+        if n > old_n:
+            arr[old_n:] = urls[old_n:]  # new tail, one write of only the new chunks
+            n_written += n - old_n
     else:
         arr = root.create_array(
             SOURCE_URL_VAR, shape=(n,), chunks=(1,),
             dtype=_STRING_DTYPE, dimension_names=(concat_dim,),
         )
-    arr[:] = urls
+        arr[:] = urls
+        n_written = n
 
-    logger.info("source_url reconciled: %d step(s), %d newly supplied, %d unknown",
-                n, len(new_map), n_missing)
-    return {"n_steps": n, "n_supplied": len(new_map), "n_missing": n_missing}
+    logger.info("source_url reconciled: %d step(s), %d newly supplied, %d unknown, "
+                "%d chunk(s) written", n, len(new_map), n_missing, n_written)
+    return {"n_steps": n, "n_supplied": len(new_map), "n_missing": n_missing,
+            "n_written": n_written}
 
 
 def source_urls_for_values(store, values, concat_dim="time"):

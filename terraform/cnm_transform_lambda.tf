@@ -37,22 +37,81 @@ resource "aws_lambda_function" "cnm_transform" {
   }
 }
 
-# --- SNS Subscription ---
+# --- Owned CNM-R SNS Topic ---
+# We own this topic (rather than subscribing to Cumulus's shared response
+# topic). Cumulus is configured to publish CNM-R messages here; the access
+# policy below grants the configured publisher principals sns:Publish.
+
+resource "aws_sns_topic" "cnm_response" {
+  name = "${local.resource_prefix}-cnm-response"
+
+  tags = {
+    Name = "${local.resource_prefix}-cnm-response"
+  }
+}
+
+resource "aws_sns_topic_policy" "cnm_response" {
+  arn = aws_sns_topic.cnm_response.arn
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        # Account owner retains full control of the topic. Topic resource
+        # policies only accept resource-scoped actions (not SNS:* which would
+        # include account-level actions and is rejected as "out of service
+        # scope"); this is the standard owner action set.
+        Sid       = "Owner"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action = [
+          "SNS:GetTopicAttributes",
+          "SNS:SetTopicAttributes",
+          "SNS:AddPermission",
+          "SNS:RemovePermission",
+          "SNS:DeleteTopic",
+          "SNS:Subscribe",
+          "SNS:ListSubscriptionsByTopic",
+          "SNS:Publish",
+        ]
+        Resource = aws_sns_topic.cnm_response.arn
+      },
+      {
+        # Publishers (e.g. the Cumulus publish role). Defaults to this account
+        # when var.cnm_publisher_principal_arns is empty.
+        Sid    = "AllowPublish"
+        Effect = "Allow"
+        Principal = {
+          AWS = length(var.cnm_publisher_principal_arns) > 0 ? var.cnm_publisher_principal_arns : ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+        }
+        Action   = "SNS:Publish"
+        Resource = aws_sns_topic.cnm_response.arn
+      },
+    ]
+  })
+}
+
+# --- SNS Subscription (transform Lambda to the owned topic) ---
 
 resource "aws_sns_topic_subscription" "cnm_to_transform" {
-  count     = var.cnm_sns_topic_arn != "" ? 1 : 0
-  topic_arn = var.cnm_sns_topic_arn
+  topic_arn = aws_sns_topic.cnm_response.arn
   protocol  = "lambda"
   endpoint  = aws_lambda_function.cnm_transform.arn
 }
 
 resource "aws_lambda_permission" "sns_invoke_cnm_transform" {
-  count         = var.cnm_sns_topic_arn != "" ? 1 : 0
   statement_id  = "AllowSNSInvoke"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.cnm_transform.function_name
   principal     = "sns.amazonaws.com"
-  source_arn    = var.cnm_sns_topic_arn
+  source_arn    = aws_sns_topic.cnm_response.arn
+}
+
+# --- Output: hand this ARN to Cumulus so it publishes CNM-R here ---
+
+output "cnm_response_topic_arn" {
+  value       = aws_sns_topic.cnm_response.arn
+  description = "SNS topic ARN that Cumulus should publish CNM-R messages to."
 }
 
 # --- IAM Role ---

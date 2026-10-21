@@ -42,10 +42,14 @@ variable "append_lambda_max_concurrency" {
   default     = 10
 }
 
-variable "cnm_sns_topic_arn" {
-  description = "ARN of the SNS topic that receives CNM-R messages. Leave empty to skip subscription."
-  type        = string
-  default     = ""
+# We now OWN the CNM-R topic (aws_sns_topic.cnm_response) and point Cumulus at
+# it, instead of subscribing to Cumulus's shared response topic. This variable
+# lists the principals allowed to publish to our topic (e.g. the Cumulus publish
+# role ARN). Empty = allow this account's root (fine when Cumulus is same-account).
+variable "cnm_publisher_principal_arns" {
+  description = "IAM ARNs allowed to publish to the owned CNM-R SNS topic. Empty defaults to this account root."
+  type        = list(string)
+  default     = []
 }
 
 variable "cnm_collection_allowlist" {
