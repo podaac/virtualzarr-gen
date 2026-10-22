@@ -31,7 +31,6 @@ Usage:
 """
 
 import argparse
-import sys
 from datetime import datetime, timedelta, timezone
 
 import boto3
@@ -63,10 +62,12 @@ def prefix_size(s3, bucket, prefix):
 
 
 def human(nbytes):
-    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
-        if abs(nbytes) < 1024 or unit == "TiB":
+    """Format a byte count as a human-readable string (B .. TiB)."""
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if abs(nbytes) < 1024:
             return f"{nbytes:.1f}{unit}"
         nbytes /= 1024
+    return f"{nbytes:.1f}TiB"
 
 
 def compact_one(s3, bucket, prefix, cutoff, dry_run):
@@ -102,6 +103,7 @@ def compact_one(s3, bucket, prefix, cutoff, dry_run):
 
 
 def main():
+    """Compact one or more Icechunk stores from the command line."""
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--store-bucket", default=DEFAULT_BUCKET)

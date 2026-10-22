@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=cyclic-import
 """
 Optional ``source_url`` coordinate for Icechunk v2 virtual Zarr stores.
 
@@ -45,7 +46,7 @@ In ``append_granules.main`` / ``append_lambda_handler._append_to_store`` /
 ``sqs_append_granules.append_to_collection``, after ``apply_write_plan`` and
 before ``session.commit``::
 
-    from source_url_coord import url_map_from_granules, reconcile_source_urls
+    from icechunk_pipeline.source_url_coord import url_map_from_granules, reconcile_source_urls
     url_map = url_map_from_granules(granule_urls, auth, concat_dim=concat_dim)
     reconcile_source_urls(session, url_map, concat_dim=concat_dim)
 
@@ -60,11 +61,17 @@ Query::
 """
 
 import logging
+import tempfile
 
 import numpy as np
 import zarr
 
-from icechunk_pipeline.icechunk_append import delete_coordinates
+from icechunk_pipeline.icechunk_append import (
+    apply_write_plan,
+    build_write_plan,
+    delete_coordinates,
+    read_store_coordinate,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +92,10 @@ def url_map_from_granules(urls, auth, concat_dim="time", build_vds_fn=None,
     keep this module importable without the full S3 dependency stack.
     """
     if build_vds_fn is None:
-        from append_granules import build_vds as build_vds_fn
+        # deferred: append_granules imports this module
+        from icechunk_pipeline.append_granules import (  # pylint: disable=import-outside-toplevel
+            build_vds as build_vds_fn,
+        )
 
     mapping = {}
     for url in urls:
@@ -302,17 +312,14 @@ def retire_moved_urls(session, new_map, concat_dim="time"):
 # Self-test: drives the real icechunk_append planner through create / append /
 # reprocess / insert / delete on a synthetic local store and checks that
 # source_url stays aligned to the time axis at every stage.
-#   python source_url_coord.py
+#   python -m icechunk_pipeline.source_url_coord
 # --------------------------------------------------------------------------- #
-def _selftest():
-    import tempfile
-
-    from icechunk_append import (
-        read_store_coordinate, build_write_plan, apply_write_plan,
-        delete_coordinates,
-    )
+def _selftest():  # pylint: disable=too-many-statements
     # reuse the synthetic VDS/repo builders from the planner's test module
-    from test_icechunk_append import _make_vds, _repo
+    from icechunk_pipeline.tests.test_icechunk_append import (  # pylint: disable=import-outside-toplevel
+        _make_vds,
+        _repo,
+    )
 
     def url_for(tv):
         return f"s3://bucket/g{tv}.nc"

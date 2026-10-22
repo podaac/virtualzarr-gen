@@ -39,10 +39,12 @@ DEFAULT_HTTPS_HOST = "archive.podaac.earthdata.nasa.gov"
 
 
 def https_host_for_bucket(bucket):
+    """Return the HTTPS archive host serving ``bucket``."""
     return BUCKET_TO_HOST.get(bucket, DEFAULT_HTTPS_HOST)
 
 
 def credentials_endpoint_for_bucket(bucket):
+    """Return the Earthdata s3credentials endpoint for ``bucket``."""
     return f"https://{https_host_for_bucket(bucket)}/s3credentials"
 
 
@@ -56,10 +58,12 @@ def s3_to_http_url(s3_url, bucket=None):
 
 
 def get_store_prefix_s3(collection):
+    """Return the S3 key prefix of a collection's S3-reference Icechunk store."""
     return f"virtual_collections/{collection}/{collection}.icechunk_v2.s3/"
 
 
 def get_store_prefix_https(collection):
+    """Return the S3 key prefix of a collection's HTTPS-reference Icechunk store."""
     return f"virtual_collections/{collection}/{collection}.icechunk_v2.https/"
 
 

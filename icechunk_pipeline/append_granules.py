@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# pylint: disable=too-many-statements, too-many-branches
+# pylint: disable=R0801
 """
 Append new granules to an existing Icechunk v2 virtual Zarr store on S3.
 
@@ -20,6 +22,7 @@ Usage:
 
 import argparse
 import logging
+import os
 import sys
 import warnings
 from datetime import datetime, timezone
@@ -28,6 +31,7 @@ from urllib.parse import urlparse
 import earthaccess
 import icechunk
 import xarray as xr
+from dask.distributed import Client, LocalCluster
 from obstore.auth.earthdata import NasaEarthdataCredentialProvider
 from obstore.store import S3Store
 from obspec_utils.registry import ObjectStoreRegistry
@@ -44,6 +48,7 @@ from icechunk_pipeline.source_url_coord import (
 
 
 def setup_logging(debug=False):
+    """Configure root logging at INFO, or DEBUG when ``debug`` is set."""
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -51,6 +56,7 @@ def setup_logging(debug=False):
 
 
 def load_granule_urls(granule_file=None, granules=None):
+    """Collect granule URLs from a file (one per line, ``#`` comments) and/or a list."""
     urls = []
     if granule_file:
         with open(granule_file) as f:
@@ -64,6 +70,7 @@ def load_granule_urls(granule_file=None, granules=None):
 
 
 def open_repo_s3(bucket, prefix, vcc_bucket):
+    """Open an existing S3 Icechunk repo with its virtual chunk container pointed at ``vcc_bucket``."""
     storage = icechunk.s3_storage(
         bucket=bucket,
         prefix=prefix,
@@ -81,6 +88,7 @@ def open_repo_s3(bucket, prefix, vcc_bucket):
 
 def build_vds(data_urls, auth, preprocess=None, concat_dim="time",
               data_vars="minimal", coords="minimal"):
+    """Build a virtual dataset from S3 granules. Returns ``(vds, source_bucket)``."""
     parsed_url = urlparse(data_urls[0])
     bucket = parsed_url.netloc
     credentials_endpoint = "https://archive.podaac.earthdata.nasa.gov/s3credentials"
@@ -96,19 +104,19 @@ def build_vds(data_urls, auth, preprocess=None, concat_dim="time",
     )
     registry = ObjectStoreRegistry({f"s3://{bucket}": s3_store})
 
-    mfdataset_kwargs = dict(
-        urls=data_urls,
-        registry=registry,
-        parser=HDFParser(),
-        decode_times=False,
-        parallel="dask",
-        combine="nested",
-        concat_dim=concat_dim,
-        data_vars=data_vars,
-        coords=coords,
-        compat="override",
-        combine_attrs="override",
-    )
+    mfdataset_kwargs = {
+        "urls": data_urls,
+        "registry": registry,
+        "parser": HDFParser(),
+        "decode_times": False,
+        "parallel": "dask",
+        "combine": "nested",
+        "concat_dim": concat_dim,
+        "data_vars": data_vars,
+        "coords": coords,
+        "compat": "override",
+        "combine_attrs": "override",
+    }
     if preprocess:
         mfdataset_kwargs["preprocess"] = preprocess
 
@@ -120,6 +128,7 @@ def build_vds(data_urls, auth, preprocess=None, concat_dim="time",
 
 
 def main():
+    """Append granules to an existing Icechunk store from the command line."""
     parser = argparse.ArgumentParser(
         description="Append granules to an existing Icechunk v2 store on S3",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -155,7 +164,6 @@ def main():
 
     auth = earthaccess.login()
 
-    from dask.distributed import Client, LocalCluster
     cluster = LocalCluster(
         n_workers=args.cpu_count,
         threads_per_worker=1,
@@ -166,10 +174,9 @@ def main():
     logging.info("Dask client: %s", client)
 
     def _silence(token):
-        import warnings, logging, earthaccess as ea, os
         if token:
             os.environ["EARTHDATA_TOKEN"] = token
-            ea.login(strategy="environment")
+            earthaccess.login(strategy="environment")
         warnings.filterwarnings("ignore")
         for name in ["distributed", "xarray", "py.warnings", "fsspec", "h5py"]:
             logging.getLogger(name).setLevel(logging.ERROR)
@@ -272,7 +279,7 @@ def main():
         warnings.filterwarnings("ignore")
         logging.disable(logging.CRITICAL)
         try:
-            client.shutdown(timeout=30)
+            client.shutdown()
         except Exception:
             pass
         try:

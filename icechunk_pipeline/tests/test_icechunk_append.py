@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=missing-function-docstring
 """
 Tests for icechunk_append: region / append / insert placement against a real
 in-memory Icechunk store backed by local virtual chunks.
@@ -11,7 +12,6 @@ import tempfile
 
 import numpy as np
 import xarray as xr
-import zarr
 import icechunk
 from virtualizarr.manifests import ChunkManifest, ManifestArray
 from zarr.codecs import BytesCodec
@@ -23,7 +23,6 @@ from icechunk_pipeline.icechunk_append import (
     build_write_plan,
     apply_write_plan,
     delete_coordinates,
-    NonRegularGridError,
 )
 
 Y, X = 2, 3
@@ -53,7 +52,8 @@ def _make_vds(time_values, chunk_dir):
         dimension_names=("time", "y", "x"),
         storage_transformers=None,
     )
-    ma = ManifestArray(chunkmanifest=manifest, metadata=metadata)
+    # virtualizarr 2.x signature; the poetry env pylint runs in has 1.x
+    ma = ManifestArray(chunkmanifest=manifest, metadata=metadata)  # pylint: disable=unexpected-keyword-arg,no-value-for-parameter
     return xr.Dataset(
         {"foo": xr.Variable(("time", "y", "x"), ma)},
         coords={"time": ("time", np.asarray(time_values, dtype="int64"))},

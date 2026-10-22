@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# pylint: disable=R0801
 """
 AWS Lambda handler for appending granules to Icechunk v2 stores.
 
@@ -13,6 +14,7 @@ Expected SQS message body (JSON):
     }
 """
 
+import functools
 import json
 import logging
 import os
@@ -60,14 +62,14 @@ SSM_EDL_PASSWORD = os.environ.get("SSM_EDL_PASSWORD", "")
 SSM_EDL_TOKEN = os.environ.get("SSM_EDL_TOKEN", "")
 
 
-_ssm_client = None
+@functools.lru_cache(maxsize=None)
+def _ssm_client():
+    """Return a process-wide SSM client, reused across warm Lambda invocations."""
+    return boto3.client("ssm")
 
 
 def _get_ssm_parameter(name):
-    global _ssm_client
-    if _ssm_client is None:
-        _ssm_client = boto3.client("ssm")
-    resp = _ssm_client.get_parameter(Name=name, WithDecryption=True)
+    resp = _ssm_client().get_parameter(Name=name, WithDecryption=True)
     return resp["Parameter"]["Value"]
 
 
@@ -109,6 +111,7 @@ def login_earthdata():
 
 
 def open_repo(bucket, prefix, vcc_url_prefix, vcc_store):
+    """Open an existing S3 Icechunk repo with the given virtual chunk container."""
     logger.info("open_repo: bucket=%s prefix=%s vcc_url_prefix=%s", bucket, prefix, vcc_url_prefix)
     storage = icechunk.s3_storage(
         bucket=bucket,
@@ -127,6 +130,7 @@ def open_repo(bucket, prefix, vcc_url_prefix, vcc_store):
 
 def build_vds(data_urls, auth, concat_dim="time", data_vars="minimal",
               coords="minimal", preprocess_fn=None):
+    """Build a virtual dataset from S3 granules. Returns ``(vds, source_bucket)``."""
     parsed_url = urlparse(data_urls[0])
     bucket = parsed_url.netloc
     # Credentials endpoint follows the archive host of the source bucket
@@ -145,18 +149,18 @@ def build_vds(data_urls, auth, concat_dim="time", data_vars="minimal",
     )
     registry = ObjectStoreRegistry({f"s3://{bucket}": s3_store})
 
-    mfdataset_kwargs = dict(
-        urls=data_urls,
-        registry=registry,
-        parser=HDFParser(),
-        decode_times=False,
-        combine="nested",
-        concat_dim=concat_dim,
-        data_vars=data_vars,
-        coords=coords,
-        compat="override",
-        combine_attrs="override",
-    )
+    mfdataset_kwargs = {
+        "urls": data_urls,
+        "registry": registry,
+        "parser": HDFParser(),
+        "decode_times": False,
+        "combine": "nested",
+        "concat_dim": concat_dim,
+        "data_vars": data_vars,
+        "coords": coords,
+        "compat": "override",
+        "combine_attrs": "override",
+    }
     if preprocess_fn:
         mfdataset_kwargs["preprocess"] = preprocess_fn
 
@@ -236,6 +240,7 @@ def _append_to_store(collection, vds, store_bucket, store_prefix, vcc_url_prefix
 
 def append_to_collection(collection, granule_urls, store_bucket, auth,
                          store_prefix_override=None):
+    """Append granules to a collection's S3 and HTTPS Icechunk stores."""
     config = get_collection_config(collection)
     concat_dim = config["concat_dim"]
     data_vars = config["data_vars"]
@@ -294,7 +299,7 @@ def append_to_collection(collection, granule_urls, store_bucket, auth,
     )
 
 
-def handler(event, context):
+def handler(event, context):  # pylint: disable=unused-argument
     """Lambda entry point. Receives an SQS event with a batch of messages.
 
     A single SQS FIFO poll can contain messages from multiple MessageGroupIds

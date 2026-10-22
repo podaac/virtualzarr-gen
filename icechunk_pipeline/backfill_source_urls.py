@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# pylint: disable=too-many-statements, too-many-branches
+# pylint: disable=R0801
 """
 One-time backfill of the ``source_url`` coordinate for an EXISTING Icechunk v2
 store that was written before ``source_url_coord`` was wired in.
@@ -36,8 +38,8 @@ from datetime import datetime, timezone
 
 import earthaccess
 import icechunk
+from dask.distributed import Client, LocalCluster
 
-from icechunk_pipeline.sqs_append_granules import build_vds
 from icechunk_pipeline.icechunk_append import read_store_coordinate
 from icechunk_pipeline.source_url_coord import (
     url_map_from_granules,
@@ -64,6 +66,7 @@ def open_repo(store_bucket, store_prefix, vcc_bucket=None):
 
 
 def main():
+    """Backfill the source_url coordinate of an existing store from the command line."""
     ap = argparse.ArgumentParser(
         description="Backfill source_url for an existing Icechunk v2 store",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__,
@@ -119,7 +122,6 @@ def main():
     if not urls:
         raise SystemExit("No source URLs to map.")
 
-    from dask.distributed import Client, LocalCluster
     cluster = LocalCluster(n_workers=args.cpu_count, threads_per_worker=1,
                            memory_limit=args.memory_limit, silence_logs=logging.ERROR)
     client = Client(cluster)
@@ -157,7 +159,7 @@ def main():
     finally:
         warnings.filterwarnings("ignore")
         logging.disable(logging.CRITICAL)
-        for closer in (lambda: client.shutdown(timeout=30), lambda: cluster.close(timeout=30)):
+        for closer in (client.shutdown, lambda: cluster.close(timeout=30)):
             try:
                 closer()
             except Exception:

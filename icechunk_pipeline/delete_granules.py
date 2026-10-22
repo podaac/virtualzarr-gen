@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# pylint: disable=too-many-statements, too-many-branches
+# pylint: disable=R0801
 """
 Delete granules from an existing Icechunk v2 virtual Zarr store on S3.
 
@@ -28,12 +30,12 @@ Usage:
 
 import argparse
 import logging
-import sys
 import warnings
 from datetime import datetime, timezone
 
 import earthaccess
 import numpy as np
+from dask.distributed import Client, LocalCluster
 
 from icechunk_pipeline.append_granules import build_vds, open_repo_s3
 from icechunk_pipeline.icechunk_append import read_store_coordinate, delete_coordinates
@@ -57,6 +59,7 @@ def map_urls_to_coordinates(urls, auth, concat_dim="time",
 
 
 def main():
+    """Delete granules from an existing Icechunk store from the command line."""
     ap = argparse.ArgumentParser(
         description="Delete granules from an Icechunk v2 store on S3",
         formatter_class=argparse.RawDescriptionHelpFormatter, epilog=__doc__,
@@ -81,7 +84,6 @@ def main():
 
     auth = earthaccess.login()
 
-    from dask.distributed import Client, LocalCluster
     cluster = LocalCluster(n_workers=args.cpu_count, threads_per_worker=1,
                            memory_limit=args.memory_limit, silence_logs=logging.ERROR)
     client = Client(cluster)
@@ -142,7 +144,7 @@ def main():
     finally:
         warnings.filterwarnings("ignore")
         logging.disable(logging.CRITICAL)
-        for closer in (lambda: client.shutdown(timeout=30), lambda: cluster.close(timeout=30)):
+        for closer in (client.shutdown, lambda: cluster.close(timeout=30)):
             try:
                 closer()
             except Exception:

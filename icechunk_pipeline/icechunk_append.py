@@ -45,7 +45,8 @@ from dataclasses import dataclass, field
 import numpy as np
 import xarray as xr
 import zarr
-import virtualizarr  # noqa: F401  -- registers the `.vz` dataset accessor
+# registers the `.vz` dataset accessor
+import virtualizarr  # noqa: F401  # pylint: disable=unused-import
 
 logger = logging.getLogger(__name__)
 
@@ -74,18 +75,22 @@ class WritePlan:
 
     @property
     def n_region(self) -> int:
+        """Number of incoming steps already present in the store."""
         return len(self.present_positions)
 
     @property
     def n_new(self) -> int:
+        """Number of incoming steps not yet in the store."""
         return len(self.new_positions)
 
     @property
     def is_empty(self) -> bool:
+        """True when the plan writes nothing."""
         return self.n_region == 0 and self.n_new == 0
 
     @property
     def mode(self) -> str:
+        """Write mode: ``region-only``, ``append``, or ``insert``."""
         if self.n_new == 0:
             return "region-only"
         return "insert" if self.needs_reindex else "append"

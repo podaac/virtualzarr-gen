@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# pylint: disable=too-many-statements, too-many-branches
+# pylint: disable=R0801
 """
 Poll an SQS queue for granule append messages and update icechunk stores.
 
@@ -32,7 +34,7 @@ Usage:
 import argparse
 import json
 import logging
-import sys
+import os
 import time
 import warnings
 from collections import defaultdict
@@ -43,6 +45,7 @@ import boto3
 import earthaccess
 import icechunk
 import xarray as xr
+from dask.distributed import Client, LocalCluster
 from obstore.auth.earthdata import NasaEarthdataCredentialProvider
 from obstore.store import S3Store
 from obspec_utils.registry import ObjectStoreRegistry
@@ -66,6 +69,7 @@ from podaac.collection_config import (
 
 
 def open_repo_s3(bucket, prefix, vcc_bucket):
+    """Open an existing S3 Icechunk repo with its virtual chunk container pointed at ``vcc_bucket``."""
     storage = icechunk.s3_storage(
         bucket=bucket,
         prefix=prefix,
@@ -83,6 +87,7 @@ def open_repo_s3(bucket, prefix, vcc_bucket):
 
 def build_vds(data_urls, auth, concat_dim="time", data_vars="minimal",
               coords="minimal", preprocess_fn=None):
+    """Build a virtual dataset from S3 granules. Returns ``(vds, source_bucket)``."""
     parsed_url = urlparse(data_urls[0])
     bucket = parsed_url.netloc
     # Credentials endpoint follows the archive host of the source bucket
@@ -101,19 +106,19 @@ def build_vds(data_urls, auth, concat_dim="time", data_vars="minimal",
     )
     registry = ObjectStoreRegistry({f"s3://{bucket}": s3_store})
 
-    mfdataset_kwargs = dict(
-        urls=data_urls,
-        registry=registry,
-        parser=HDFParser(),
-        decode_times=False,
-        parallel="dask",
-        combine="nested",
-        concat_dim=concat_dim,
-        data_vars=data_vars,
-        coords=coords,
-        compat="override",
-        combine_attrs="override",
-    )
+    mfdataset_kwargs = {
+        "urls": data_urls,
+        "registry": registry,
+        "parser": HDFParser(),
+        "decode_times": False,
+        "parallel": "dask",
+        "combine": "nested",
+        "concat_dim": concat_dim,
+        "data_vars": data_vars,
+        "coords": coords,
+        "compat": "override",
+        "combine_attrs": "override",
+    }
     if preprocess_fn:
         mfdataset_kwargs["preprocess"] = preprocess_fn
 
@@ -125,6 +130,7 @@ def build_vds(data_urls, auth, concat_dim="time", data_vars="minimal",
 
 
 def receive_messages(sqs, queue_url, max_messages=10, wait_time=20):
+    """Long-poll SQS and return up to ``max_messages`` messages."""
     response = sqs.receive_message(
         QueueUrl=queue_url,
         MaxNumberOfMessages=max_messages,
@@ -158,6 +164,7 @@ def parse_and_group_messages(messages):
 
 
 def append_to_collection(collection, granule_urls, store_bucket, auth):
+    """Append granules to a collection's S3 and HTTPS Icechunk stores."""
     config = get_collection_config(collection)
     concat_dim = config["concat_dim"]
     data_vars = config["data_vars"]
@@ -243,18 +250,22 @@ def append_to_collection(collection, granule_urls, store_bucket, auth):
 
 
 def delete_messages(sqs, queue_url, receipt_handles):
+    """Delete processed messages from the queue."""
     for rh in receipt_handles:
         sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=rh)
 
 
 def process_batch(sqs, queue_url, store_bucket, auth):
+    """Receive one batch, append it per collection, and return the message count."""
     messages = receive_messages(sqs, queue_url)
     if not messages:
         return 0
 
     logging.info("Received %d message(s) from SQS", len(messages))
 
-    grouped, errors = parse_and_group_messages(messages)
+    # Malformed messages are logged by the parser and left on the queue; the
+    # redrive policy moves them to the DLQ after maxReceiveCount attempts.
+    grouped, _malformed = parse_and_group_messages(messages)
 
     for collection, entries in grouped.items():
         all_granules = []
@@ -277,6 +288,7 @@ def process_batch(sqs, queue_url, store_bucket, auth):
 
 
 def main():
+    """Poll the SQS queue and append granules from the command line."""
     parser = argparse.ArgumentParser(
         description="Poll SQS for granule append messages and update icechunk stores",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -301,7 +313,6 @@ def main():
     auth = earthaccess.login()
     sqs = boto3.client("sqs", region_name="us-west-2")
 
-    from dask.distributed import Client, LocalCluster
     cluster = LocalCluster(
         n_workers=args.cpu_count,
         threads_per_worker=1,
@@ -312,10 +323,9 @@ def main():
     logging.info("Dask client: %s", client)
 
     def _silence(token):
-        import warnings, logging, earthaccess as ea, os
         if token:
             os.environ["EARTHDATA_TOKEN"] = token
-            ea.login(strategy="environment")
+            earthaccess.login(strategy="environment")
         warnings.filterwarnings("ignore")
         for name in ["distributed", "xarray", "py.warnings", "fsspec", "h5py"]:
             logging.getLogger(name).setLevel(logging.ERROR)
@@ -345,7 +355,7 @@ def main():
         warnings.filterwarnings("ignore")
         logging.disable(logging.CRITICAL)
         try:
-            client.shutdown(timeout=30)
+            client.shutdown()
         except Exception:
             pass
         try:
