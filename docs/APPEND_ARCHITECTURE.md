@@ -28,8 +28,8 @@ SNS topic + transform Lambda), or direct SQS sends from tests/manual tools
 
   (A) PRODUCTION                                   (B) TEST / MANUAL
   ┌──────────────────┐                             ┌───────────────────────────┐
-  │ Cumulus          │                             │ test_e2e_* / trigger /     │
-  │ (publishes CNM-R)│                             │ manual sqs.send_message    │
+  │ Cumulus          │                             │ trigger_task / manual      │
+  │ (publishes CNM-R)│                             │ sqs.send_message           │
   └────────┬─────────┘                             └──────────────┬────────────┘
            │ SNS:Publish                                          │ (skips SNS +
            ▼                                                      │  transform)
@@ -187,16 +187,9 @@ virtual_collections/{collection}/{collection}.icechunk_v2.https/
 
 ---
 
-## 6. Testing the live pipeline
+## 6. Testing
 
-Under `icechunk_pipeline/tests/` (all treat the deployed handler as a black box
-reached only through SQS; run on an EC2 in `us-west-2`):
-
-- `test_e2e_setup_store.py` / `test_e2e_send_sqs.py` / `test_e2e_verify_store.py`
-  — single-collection create / send / verify.
-- `test_e2e_all_scenarios.py` — single collection through CREATE → TAIL-APPEND →
-  IDEMPOTENT → GAP-INSERT on a scratch store.
-- `test_e2e_multi_collection.py` — **multiple** collections at once. `--create`
-  self-bootstraps a scratch store per collection, appends via SQS, asserts step
-  growth + S3/HTTPS parity + monotonicity, then cleans up. `--shuffle` sends out
-  of order to demonstrate the warn-and-append behavior (ordering informational).
+`icechunk_pipeline/tests/test_icechunk_append.py` covers the write-mode planner
+(region / append / insert placement) against a real in-memory Icechunk store
+backed by local virtual chunks. It runs with `pytest` and needs no cloud
+credentials.
