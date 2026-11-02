@@ -69,7 +69,7 @@ logger = logging.getLogger("perf-append")
 
 DEFAULT_BUCKET = "podaac-sit-services-cloud-optimizer"
 DEFAULT_COLLECTION = "MUR25-JPL-L4-GLOB-v04.2"
-DEFAULT_SCRATCH_BASE = "virtual_collections/_perf_append/"
+DEFAULT_SCRATCH_BASE = "virtual_collections/simon_demo_append/"
 
 BUCKET_TO_HOST = {
     "podaac-swot-ops-cumulus-protected": "archive.swot.podaac.earthdata.nasa.gov",
