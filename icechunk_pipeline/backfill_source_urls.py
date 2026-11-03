@@ -79,6 +79,9 @@ def main():
                    "(default: read the store's manifest)")
     g.add_argument("--granule-file", help="File of source URLs, one per line")
     ap.add_argument("--vcc-bucket", help="s3://<source-bucket> (optional)")
+    ap.add_argument("--https-urls", action="store_true",
+                    help="Read granules via s3:// but record https:// archive URLs "
+                         "(use for the .https store)")
     ap.add_argument("--cpu-count", type=int, default=8)
     ap.add_argument("--memory-limit", default="4GB")
     ap.add_argument("--dry-run", action="store_true")
@@ -132,7 +135,12 @@ def main():
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            url_map = url_map_from_granules(urls, auth, concat_dim=args.concat_dim)
+            url_map = url_map_from_granules(urls, auth, concat_dim=args.concat_dim,
+                                            build_vds_fn=build_vds)
+
+        if args.https_urls:
+            from podaac.collection_config import s3_to_http_url
+            url_map = {t: s3_to_http_url(u) for t, u in url_map.items()}
 
         covered = sum(1 for t in axis.tolist() if t in url_map)
         logging.info("Resolved %d URL(s) -> %d coordinate value(s); %d of %d "
