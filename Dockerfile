@@ -2,8 +2,12 @@ FROM python:3.12 AS base
 
 WORKDIR /opt/cloud-optimized
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y jq awscli
+# Install system dependencies and security updates
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends jq awscli \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
 RUN pip install poetry
