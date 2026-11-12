@@ -81,22 +81,26 @@ SPECIAL_COLLECTION_SEARCHES = {
 
 
 def setup_logging(debug=False):
+    """Configure root logging."""
     log_format = "%(asctime)s %(levelname)s %(message)s"
     level = logging.DEBUG if debug else logging.INFO
     logging.basicConfig(level=level, format=log_format)
 
 
 def is_valid_date(value):
+    """Return True if value is a usable date string."""
     return value not in (None, "None", "")
 
 
 def get_temporal_range(start_date, end_date):
+    """Return a (start, end) tuple, or None if neither date is valid."""
     if is_valid_date(start_date) or is_valid_date(end_date):
         return (start_date, end_date)
     return None
 
 
 def search_granules(collection, temporal):
+    """Search Earthdata for granules of a collection, honoring special searches."""
     if collection in SPECIAL_COLLECTION_SEARCHES:
         results = []
         for query in SPECIAL_COLLECTION_SEARCHES[collection]:
@@ -115,14 +119,10 @@ def search_granules(collection, temporal):
 
 
 def silence_worker_warnings_and_auth(token):
-    import warnings
-    import logging
-    import earthaccess as ea
-    import os
-
+    """Authenticate a worker with Earthdata and quiet noisy warnings/logs."""
     if token:
         os.environ["EARTHDATA_TOKEN"] = token
-        ea.login(strategy="environment")
+        earthaccess.login(strategy="environment")
 
     warnings.filterwarnings("ignore")
     for name in ["distributed", "xarray", "py.warnings", "fsspec", "h5py"]:
@@ -134,7 +134,6 @@ def _silence_distributed_logging():
     tracebacks emitted during cluster teardown. logging.disable() in the main
     process cannot reach these because workers are separate processes.
     """
-    import logging
     for name in (
         "distributed", "distributed.worker", "distributed.core",
         "distributed.comm", "distributed.nanny", "distributed.scheduler",
@@ -144,6 +143,7 @@ def _silence_distributed_logging():
 
 
 def create_icechunk_repo_s3access(output_bucket: str, prefix: str, vcc_bucket: str):
+    """Create an Icechunk repo whose virtual chunks are read via S3."""
     storage = icechunk.s3_storage(
         bucket=output_bucket,
         prefix=prefix,
@@ -160,6 +160,7 @@ def create_icechunk_repo_s3access(output_bucket: str, prefix: str, vcc_bucket: s
 
 
 def create_icechunk_repo_httpaccess(output_bucket: str, prefix: str, vcc_http_base: str):
+    """Create an Icechunk repo whose virtual chunks are read via HTTP."""
     storage = icechunk.s3_storage(
         bucket=output_bucket,
         prefix=prefix,
@@ -191,6 +192,7 @@ def main(
     coords=None,
     sort_by=None,
 ):
+    """Build virtual Icechunk stores (S3 and HTTPS) for a collection."""
     setup_logging(debug)
 
     # Per-collection settings come from the shared collection_config; any value
@@ -311,15 +313,15 @@ def main(
                 )
                 s3_obstore_registry = ObjectStoreRegistry({f"s3://{bucket}": s3_store})
 
-                mfdataset_kwargs = dict(
-                    urls=batch,
-                    registry=s3_obstore_registry,
-                    parser=HDFParser(),
-                    decode_times=False,
-                    parallel="dask",
-                    combine="nested",
+                mfdataset_kwargs = {
+                    "urls": batch,
+                    "registry": s3_obstore_registry,
+                    "parser": HDFParser(),
+                    "decode_times": False,
+                    "parallel": "dask",
+                    "combine": "nested",
                     **xr_combine_kwargs,
-                )
+                }
                 if preprocess_fn:
                     mfdataset_kwargs["preprocess"] = preprocess_fn
 
@@ -449,6 +451,7 @@ def main(
 
 
 def cli():
+    """Parse command-line arguments and run main."""
     parser = argparse.ArgumentParser(description="Generate Icechunk virtual Zarr stores")
     parser.add_argument("--collection", type=str, required=True, help="Earthdata collection short name")
     parser.add_argument(

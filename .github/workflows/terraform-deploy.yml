@@ -155,7 +155,8 @@ jobs:
       - name: Deploy Env Override
         if: |
           github.event.head_commit.message == '/deploy sit' ||
-          github.event.head_commit.message == '/deploy uat'
+          github.event.head_commit.message == '/deploy uat' ||
+          github.event.head_commit.message == '/deploy ops'
         run: |
           message="${{ github.event.head_commit.message }}"
           trimmed_message=${message:1}  # Remove leading slash
@@ -181,6 +182,7 @@ jobs:
         if: |
           github.event.head_commit.message == '/deploy sit' ||
           github.event.head_commit.message == '/deploy uat' ||
+          github.event.head_commit.message == '/deploy ops' ||
           github.ref == 'refs/heads/develop' ||
           github.ref == 'refs/heads/main'    ||
           startsWith(github.ref, 'refs/heads/release')
@@ -196,6 +198,7 @@ jobs:
         if: |
           github.event.head_commit.message == '/deploy sit' ||
           github.event.head_commit.message == '/deploy uat' ||
+          github.event.head_commit.message == '/deploy ops' ||
           github.ref == 'refs/heads/develop' ||
           github.ref == 'refs/heads/main'    ||
           startsWith(github.ref, 'refs/heads/release')
