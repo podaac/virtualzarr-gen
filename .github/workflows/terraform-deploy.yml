@@ -216,7 +216,7 @@ jobs:
       - name: Build and Push Append Lambda Image
         if: steps.ecr.outputs.ecr_url
         run: |
-          docker build --target lambda -t ${{ steps.ecr.outputs.ecr_url }}:${{ env.new_version }} .
+          docker build --platform linux/amd64 --provenance=false --sbom=false --target lambda -t ${{ steps.ecr.outputs.ecr_url }}:${{ env.new_version }} .
           docker push ${{ steps.ecr.outputs.ecr_url }}:${{ env.new_version }}
 
       - name: Update Lambda Function Image

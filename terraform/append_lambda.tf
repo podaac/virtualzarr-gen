@@ -96,7 +96,7 @@ resource "null_resource" "append_lambda_image" {
       aws ecr get-login-password --region ${var.region} | \
         docker login --username AWS --password-stdin ${aws_ecr_repository.append_lambda.repository_url}
 
-      docker build --target lambda -t ${aws_ecr_repository.append_lambda.repository_url}:${var.app_version} .
+      docker build --platform linux/amd64 --provenance=false --sbom=false --target lambda -t ${aws_ecr_repository.append_lambda.repository_url}:${var.app_version} .
 
       docker push ${aws_ecr_repository.append_lambda.repository_url}:${var.app_version}
     EOT
