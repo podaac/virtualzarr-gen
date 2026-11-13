@@ -71,6 +71,16 @@ jobs:
           echo "pyproject_name=${pyproject_name}" >> $GITHUB_ENV
           poetry version ${new_version}
 
+      - name: Deploy Env Override
+        if: |
+          github.event.head_commit.message == '/deploy sit' ||
+          github.event.head_commit.message == '/deploy uat' ||
+          github.event.head_commit.message == '/deploy ops'
+        run: |
+          message="${{ github.event.head_commit.message }}"
+          override_env_upper=$(echo "${message:1}" | awk '{print toupper($NF)}')
+          echo "TARGET_ENV_UPPERCASE=${override_env_upper}" >> $GITHUB_ENV
+
       - name: Lower Case Target Env
         run: |
           original_env_value="${TARGET_ENV_UPPERCASE}"
