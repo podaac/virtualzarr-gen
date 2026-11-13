@@ -93,7 +93,9 @@ def opends_withref(ref, fs_data):
     """Open a kerchunk reference JSON as an xarray Dataset via zarr engine."""
     storage_opts = {
         "fo": ref,
-        "remote_protocol": "https",
+        # The reference file holds s3:// chunk URLs and fs_data is an S3
+        # filesystem, so the remote protocol must be s3 (https -> KeyError 's3').
+        "remote_protocol": "s3",
         "remote_options": fs_data.storage_options,
     }
     fs_ref = fsspec.filesystem("reference", **storage_opts)
