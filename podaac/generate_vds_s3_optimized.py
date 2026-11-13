@@ -13,6 +13,7 @@ import logging
 import multiprocessing
 import os
 import sys
+import warnings
 from pathlib import Path
 
 import earthaccess
@@ -448,19 +449,45 @@ def main(
         logging.info("Test open with combined reference file: %s", data_json)
 
     finally:
-        logging.info("Shutting down Dask client and cluster...")
+        logging.info("Shutting down Dask cluster...")
+        # Mute the benign teardown race (workers heartbeat a scheduler that is
+        # already closing -> CommClosedError). Raise the log level inside the
+        # worker processes first, since logging.disable() below only affects the
+        # main process. Best-effort: the cluster may already be degraded here.
+        cluster = client.cluster
         try:
-            client.close()
+            client.run(_silence_distributed_logging)
         except Exception:
-            logging.info("Error closing Dask client")
-
+            pass
+        warnings.filterwarnings("ignore")
+        logging.disable(logging.CRITICAL)
         try:
-            if client.cluster:
-                client.cluster.close(timeout=15)
-        except TimeoutError:
-            logging.info(
-                "Dask cluster shutdown timed out. Safely ignoring and continuing exit."
-            )
+            client.shutdown(timeout=30)
+        except Exception:
+            pass
+        try:
+            client.close(timeout=30)
+        except Exception:
+            pass
+        try:
+            if cluster:
+                cluster.close(timeout=30)
+        except Exception:
+            pass
+        logging.disable(logging.NOTSET)
+
+
+def _silence_distributed_logging():
+    """Run *inside worker processes* to mute the benign heartbeat/CommClosed
+    tracebacks emitted during cluster teardown. logging.disable() in the main
+    process cannot reach these because workers are separate processes.
+    """
+    for name in (
+        "distributed", "distributed.worker", "distributed.core",
+        "distributed.comm", "distributed.nanny", "distributed.scheduler",
+        "distributed.batched",
+    ):
+        logging.getLogger(name).setLevel(logging.CRITICAL)
 
 
 def cli():
