@@ -5,23 +5,21 @@ WORKDIR /opt/cloud-optimized
 # Install system dependencies (aws cli + jq are used by wrapper.sh for SSM)
 RUN apt-get update && apt-get install -y jq awscli && rm -rf /var/lib/apt/lists/*
 
-# uv: pinned binary from the official image
-COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /bin/
-
-ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
-    UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
-    UV_PYTHON_DOWNLOADS=never \
+# Poetry installs into a single venv at /opt/venv (no Poetry-managed venvs)
+RUN pip install --no-cache-dir "poetry==2.3.2"
+ENV POETRY_VIRTUALENVS_CREATE=false \
+    VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
+RUN python -m venv /opt/venv
 
 # Install third-party dependencies first (cached layer; only invalidated by lock changes)
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev --no-install-project
+COPY pyproject.toml poetry.lock ./
+RUN poetry install --no-interaction --no-ansi --without dev --no-root
 
 # Project code. icechunk_pipeline carries the append Lambda handler too.
 COPY podaac ./podaac
 COPY icechunk_pipeline ./icechunk_pipeline
-RUN uv sync --frozen --no-dev
+RUN poetry install --no-interaction --no-ansi --without dev
 
 # --- ECS target (default) ---
 FROM base AS ecs
@@ -38,9 +36,9 @@ ENTRYPOINT ["/opt/cloud-optimized/wrapper.sh"]
 # (terraform/append_lambda.tf + terraform-deploy.yml). Do not rely on the default.
 FROM base AS lambda
 
-# awslambdaric comes from the `lambda` dependency group; boto3 (used by the
+# awslambdaric comes from the optional `lambda` group; boto3 (used by the
 # handler for SSM) is a main dependency since it is not bundled in custom images.
-RUN uv sync --frozen --no-dev --group lambda
+RUN poetry install --no-interaction --no-ansi --without dev --with lambda
 
 ENTRYPOINT ["/opt/venv/bin/python", "-m", "awslambdaric"]
 CMD ["icechunk_pipeline.append_lambda_handler.handler"]

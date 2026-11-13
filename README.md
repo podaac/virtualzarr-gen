@@ -4,16 +4,16 @@ The purpose of this repository is to provide an operationalized mechanism for ge
 
 # Quick Setup and Run
 
-This project uses [uv](https://docs.astral.sh/uv/) and generates **Icechunk** stores only (the kerchunk path has been retired).
+This project uses [Poetry](https://python-poetry.org/) and generates **Icechunk** stores only (the kerchunk path has been retired).
 Ensure you have a `.netrc` file (or `EARTHDATA_USERNAME`/`EARTHDATA_PASSWORD`) set up for earthaccess.
 
 ```
-uv sync                      # creates .venv from uv.lock (add --group lambda for the append Lambda runtime)
-uv run generate-vds-icechunk --collection MUR25-JPL-L4-GLOB-v04.2 \
+poetry install               # from poetry.lock (add --with lambda for the append Lambda runtime)
+poetry run generate-vds-icechunk --collection MUR25-JPL-L4-GLOB-v04.2 \
     --loadable-coord-vars 'lat,lon,time' --output-bucket <bucket>
 ```
 
-Dependencies are declared in `pyproject.toml` and pinned in `uv.lock`; change them with `uv add` / `uv remove` and commit both files.
+Dependencies are declared in `pyproject.toml` and pinned in `poetry.lock`; change them with `poetry add` / `poetry remove` and commit both files.
 
 # How it works
 Fundamentally, the notebook within this repository will access all the files of a given collection (filterable by start and end dates if desired), and generate kerchunk datamaps for each file, and then aggregate them all into a single virtual datastore file. The notebook can be run manually, but has been converted into a papermill notebook that is run within the docker container generated from this repository. There are several environment variables required by the Docker container to run effectively.

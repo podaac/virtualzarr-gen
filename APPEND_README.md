@@ -165,7 +165,7 @@ docker build --target ecs -t virtualzarr-gen:ecs .
 docker build --target lambda -t virtualzarr-gen:lambda .
 ```
 
-The Lambda target uses the image's uv environment (`/opt/venv`, synced with the `lambda` dependency group for `awslambdaric`) and sets the handler to `append_lambda_handler.handler`.
+The Lambda target uses the image's Poetry environment (`/opt/venv`, installed with the optional `lambda` group for `awslambdaric`) and sets the handler to `append_lambda_handler.handler`.
 
 ## Collection Configuration
 
