@@ -156,7 +156,7 @@ def create_icechunk_repo_s3access(output_bucket: str, prefix: str, vcc_bucket: s
             store=icechunk.s3_store(region="us-west-2", anonymous=True),
         )
     )
-    return icechunk.Repository.create(storage, config)
+    return _open_or_create_repo(storage, config)
 
 
 def create_icechunk_repo_httpaccess(output_bucket: str, prefix: str, vcc_http_base: str):
@@ -173,7 +173,32 @@ def create_icechunk_repo_httpaccess(output_bucket: str, prefix: str, vcc_http_ba
             icechunk.http_store(),
         )
     )
-    return icechunk.Repository.create(storage, config)
+    return _open_or_create_repo(storage, config)
+
+
+def _open_or_create_repo(storage, config):
+    """Open the repo if it exists (so regeneration is a new commit), else create it.
+
+    save_config() persists the virtual chunk container settings, so config
+    changes here also apply to repos that already exist.
+    """
+    repo = icechunk.Repository.open_or_create(storage, config)
+    repo.save_config()
+    return repo
+
+
+def _write_fresh_snapshot(repo, vds, url_map, concat_dim, message):
+    """Replace the repo contents with vds in a single atomic commit.
+
+    The clear only affects this session; readers keep seeing the previous
+    snapshot until commit, and a failed run commits nothing.
+    """
+    session = repo.writable_session("main")
+    session.store.sync_clear()
+    vds.virtualize.to_icechunk(session.store)
+    if url_map:
+        reconcile_source_urls(session, url_map, concat_dim=concat_dim)
+    return session.commit(message)
 
 
 def main(
@@ -390,29 +415,25 @@ def main(
         # Write to S3-native Icechunk stores. Store prefixes come from the shared
         # helpers so the append pipeline opens exactly what generation writes.
         s3_prefix = get_store_prefix_s3(collection)
-        logging.info("Creating S3 Icechunk store: s3://%s/%s", output_bucket, s3_prefix)
+        commit_msg = f"Generate store ({vds_s3.attrs['date_created']})"
+
+        logging.info("Writing S3 Icechunk store: s3://%s/%s", output_bucket, s3_prefix)
         repo_s3 = create_icechunk_repo_s3access(output_bucket, s3_prefix, "s3://" + bucket)
-        session_s3 = repo_s3.writable_session("main")
-        vds_s3.virtualize.to_icechunk(session_s3.store)
-        if url_map_s3:
-            reconcile_source_urls(session_s3, url_map_s3, concat_dim=concat_dim)
-        session_s3.commit("Initial commit.")
+        _write_fresh_snapshot(repo_s3, vds_s3, url_map_s3, concat_dim, commit_msg)
         logging.info("S3 store committed.")
 
         http_prefix = get_store_prefix_https(collection)
-        logging.info("Creating HTTP Icechunk store: s3://%s/%s", output_bucket, http_prefix)
+        logging.info("Writing HTTP Icechunk store: s3://%s/%s", output_bucket, http_prefix)
         repo_http = create_icechunk_repo_httpaccess(
             output_bucket,
             http_prefix,
             "https://archive.podaac.earthdata.nasa.gov/podaac-ops-cumulus-protected/",
         )
-        session_http = repo_http.writable_session("main")
-        vds_http.virtualize.to_icechunk(session_http.store)
-        if url_map_s3:
-            # Same steps, URLs rewritten to match the HTTP store's manifest.
-            url_map_http = {t: s3_to_http_url(u) for t, u in url_map_s3.items()}
-            reconcile_source_urls(session_http, url_map_http, concat_dim=concat_dim)
-        session_http.commit("Initial commit.")
+        # Same steps, URLs rewritten to match the HTTP store's manifest.
+        url_map_http = (
+            {t: s3_to_http_url(u) for t, u in url_map_s3.items()} if url_map_s3 else None
+        )
+        _write_fresh_snapshot(repo_http, vds_http, url_map_http, concat_dim, commit_msg)
         logging.info("HTTP store committed.")
 
         logging.info(
