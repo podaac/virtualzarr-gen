@@ -4,7 +4,6 @@ Trigger an ECS task for virtualzarr-gen from your local machine.
 
 Usage:
     python trigger_task.py --collection OSTIA-UKMO-L4-GLOB-REP-v2.0 --stage sit
-    python trigger_task.py --collection MUR25-JPL-L4-GLOB-v04.2 --stage sit --engine icechunk
     python trigger_task.py --collection MUR25-JPL-L4-GLOB-v04.2 --stage sit --start-date 2020-01-01 --end-date 2023-01-01
 """
 
@@ -55,7 +54,6 @@ def run_task(args):
         {"name": "CPU_COUNT", "value": str(args.cpu_count)},
         {"name": "MEMORY_LIMIT", "value": args.memory_limit},
         {"name": "BATCH_SIZE", "value": str(args.batch_size)},
-        {"name": "ENGINE", "value": args.engine},
     ]
 
     ecs = boto3.client("ecs", region_name="us-west-2")
@@ -86,7 +84,6 @@ def run_task(args):
     print(f"Cluster:         {cluster}")
     print(f"Task definition: {task_definition}")
     print(f"Collection:      {args.collection}")
-    print(f"Engine:          {args.engine}")
     print(f"Stage:           {args.stage}")
     print()
 
@@ -139,7 +136,6 @@ def main():
     )
     parser.add_argument("--collection", required=True, help="Earthdata collection short name")
     parser.add_argument("--stage", required=True, choices=["sit", "uat", "ops"], help="Deployment stage")
-    parser.add_argument("--engine", default="icechunk", choices=["kerchunk", "icechunk"], help="Processing engine (default: icechunk)")
     parser.add_argument("--loadable-vars", default="latitude,longitude,time", help="Comma-separated coordinate vars")
     parser.add_argument("--start-date", default=None, help="Start date (e.g., 2022-01-01)")
     parser.add_argument("--end-date", default=None, help="End date (e.g., 2025-01-01)")

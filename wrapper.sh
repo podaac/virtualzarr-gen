@@ -1,27 +1,6 @@
 #!/bin/bash
 set -euo pipefail  # Exit on error, undefined variables, pipe failures
 
-# Helper function to sync output files to S3
-sync_to_s3() {
-  aws s3 sync . "s3://$OUTPUT_BUCKET/virtual_collections/$COLLECTION/" \
-    --exclude "*" --include "*virtual*.json" || echo "Primary bucket not found, skipping..."
-
-  if [[ -n "${STAGING_BUCKET}" ]]; then
-    aws s3 sync . "s3://${STAGING_BUCKET}/virtual_collections/${COLLECTION}/" \
-      --exclude "*" --include "*virtual*.json" || echo "Staging bucket not found, skipping..."
-  fi
-}
-
-# Helper function to translate S3 JSON files to HTTPS JSON files
-translate_all_s3_to_https() {
-  for s3file in *_virtual_s3*.json; do
-    if [[ -f "$s3file" ]]; then
-      httpsfile="${s3file/_virtual_s3.json/_virtual_https.json}"
-      translate-s3-https "$s3file" "$httpsfile"
-    fi
-  done
-}
-
 # Environment Variables must be passed into the docker run command
 [[ -z "${START_DATE}" ]] && startDate='' || startDate="${START_DATE}"
 [[ -z "${END_DATE}" ]] && endDate='' || endDate="${END_DATE}"
@@ -63,13 +42,4 @@ if [[ -n "$endDate" ]]; then
   cmd_args+=(--end-date "$endDate")
 fi
 
-if [[ "${ENGINE:-kerchunk}" == "icechunk" ]]; then
-  source /opt/venv-icechunk/bin/activate
-  generate-vds-icechunk "${cmd_args[@]}" --output-bucket "$OUTPUT_BUCKET" || true
-else
-  source /opt/venv-kerchunk/bin/activate
-  generate-vds-s3 "${cmd_args[@]}"
-  sync_to_s3
-  translate_all_s3_to_https
-  sync_to_s3
-fi
+exec generate-vds-icechunk "${cmd_args[@]}" --output-bucket "$OUTPUT_BUCKET"

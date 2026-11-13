@@ -2,32 +2,26 @@ FROM python:3.12 AS base
 
 WORKDIR /opt/cloud-optimized
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y jq awscli
+# Install system dependencies (aws cli + jq are used by wrapper.sh for SSM)
+RUN apt-get update && apt-get install -y jq awscli && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN pip install poetry
+# uv: pinned binary from the official image
+COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /bin/
 
-# Kerchunk environment (default)
-COPY pyproject.toml poetry.lock* ./
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    UV_PYTHON_DOWNLOADS=never \
+    PATH="/opt/venv/bin:$PATH"
+
+# Install third-party dependencies first (cached layer; only invalidated by lock changes)
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
+
+# Project code. icechunk_pipeline carries the append Lambda handler too.
 COPY podaac ./podaac
-# icechunk_pipeline is a declared package in pyproject; copy it before any
-# install so both the kerchunk `poetry install` and the icechunk editable
-# `pip install -e .` can find it. It carries the append Lambda handler too.
 COPY icechunk_pipeline ./icechunk_pipeline
-RUN python -m venv /opt/venv-kerchunk && \
-    . /opt/venv-kerchunk/bin/activate && \
-    poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi
-
-# Register Jupyter kernel for papermill
-RUN /opt/venv-kerchunk/bin/python -m ipykernel install --name python3 --display-name "Python 3"
-
-# Icechunk environment
-COPY requirements_icechunk.txt ./
-RUN python -m venv /opt/venv-icechunk && \
-    /opt/venv-icechunk/bin/pip install --no-cache-dir -r requirements_icechunk.txt && \
-    /opt/venv-icechunk/bin/pip install --no-deps -e .
+RUN uv sync --frozen --no-dev
 
 # --- ECS target (default) ---
 FROM base AS ecs
@@ -44,13 +38,9 @@ ENTRYPOINT ["/opt/cloud-optimized/wrapper.sh"]
 # (terraform/append_lambda.tf + terraform-deploy.yml). Do not rely on the default.
 FROM base AS lambda
 
-# boto3 is used by the handler (SSM); it is NOT bundled in this custom image the
-# way it is in AWS-managed Lambda base images, so install it explicitly.
-RUN /opt/venv-icechunk/bin/pip install --no-cache-dir awslambdaric boto3
+# awslambdaric comes from the `lambda` dependency group; boto3 (used by the
+# handler for SSM) is a main dependency since it is not bundled in custom images.
+RUN uv sync --frozen --no-dev --group lambda
 
-# The handler and everything it imports (icechunk_append, source_url_coord,
-# collection_config) ship in the icechunk_pipeline / podaac packages copied and
-# editable-installed in the base stage -- nothing extra to copy here.
-
-ENTRYPOINT ["/opt/venv-icechunk/bin/python", "-m", "awslambdaric"]
+ENTRYPOINT ["/opt/venv/bin/python", "-m", "awslambdaric"]
 CMD ["icechunk_pipeline.append_lambda_handler.handler"]
