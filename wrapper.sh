@@ -8,12 +8,15 @@ set -euo pipefail  # Exit on error, undefined variables, pipe failures
 [[ -z "${MEMORY_LIMIT}" ]] && memoryLimit="12GB" || memoryLimit="${MEMORY_LIMIT}"
 [[ -z "${BATCH_SIZE}" ]] && batchSize=48 || batchSize="${BATCH_SIZE}"
 
-# Retrieve EDL credentials from AWS SSM
-edl_username=$(aws ssm get-parameter --with-decryption --name "$SSM_EDL_USERNAME" | jq .Parameter.Value --raw-output) || {
+# Retrieve EDL credentials from AWS SSM (boto3 from the venv; no aws cli / jq in the image)
+get_ssm_param() {
+  python -c 'import sys, boto3; print(boto3.client("ssm").get_parameter(Name=sys.argv[1], WithDecryption=True)["Parameter"]["Value"])' "$1"
+}
+edl_username=$(get_ssm_param "$SSM_EDL_USERNAME") || {
   echo "Failed to retrieve EDL username" >&2
   exit 1
 }
-edl_password=$(aws ssm get-parameter --with-decryption --name "$SSM_EDL_PASSWORD" | jq .Parameter.Value --raw-output) || {
+edl_password=$(get_ssm_param "$SSM_EDL_PASSWORD") || {
   echo "Failed to retrieve EDL password" >&2
   exit 1
 }
