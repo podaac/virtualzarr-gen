@@ -48,6 +48,11 @@ from podaac.collection_config import (
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# The Lambda runtime installs its own root handler before this module loads, so
+# basicConfig() above is a no-op there and the root level stays WARNING (INFO
+# lines such as "Committed" / "Verified shape" never reach CloudWatch). Set the
+# level explicitly; this keeps the runtime's handler and request-id format.
+logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
 STORE_BUCKET = os.environ.get("STORE_BUCKET", "")
