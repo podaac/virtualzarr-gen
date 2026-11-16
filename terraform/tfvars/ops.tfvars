@@ -4,3 +4,4 @@ stage   = "ops"
 app_version = "1.0"
 output_bucket = ["podaac-ops-services-cloud-optimizer", "podaac-ops-cumulus-public", "podaac-uat-cumulus-public"]
 image_name = "ghcr.io/podaac/virtualzarr-gen:ops"
+ssm_cnm_publisher_principals_name = "/service/virtualzarr-gen/cnm-publisher-principals"

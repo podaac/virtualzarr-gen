@@ -4,3 +4,4 @@ stage   = "sit"
 app_version = "1.0"
 output_bucket = ["podaac-sit-services-cloud-optimizer", "simon-vds-staging"]
 image_name = "ghcr.io/podaac/virtualzarr-gen:sit"
+ssm_cnm_publisher_principals_name = "/service/virtualzarr-gen/cnm-publisher-principals"

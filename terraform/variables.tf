@@ -52,6 +52,27 @@ variable "cnm_publisher_principal_arns" {
   default     = []
 }
 
+# Name of an SSM parameter holding the principals allowed to publish to the
+# CNM-R topic. Keeps account IDs out of the repo and out of plan output (SSM
+# values are sensitive). These are ADDED to this account's root (always
+# allowed) and to cnm_publisher_principal_arns.
+#
+# Parameter Store example:
+#   Name:  /service/virtualzarr-gen/cnm-publisher-principals
+#   Type:  StringList (String / SecureString also work)
+#   Value: arn:aws:iam::111111111111:role/cumulus-sns-publish-role,arn:aws:iam::222222222222:root
+#          (comma-separated ARNs, no quotes or brackets; spaces are trimmed)
+#
+# Create it with:
+#   aws ssm put-parameter --region us-west-2 --type StringList \
+#     --name /service/virtualzarr-gen/cnm-publisher-principals \
+#     --value "arn:aws:iam::111111111111:role/cumulus-sns-publish-role,arn:aws:iam::222222222222:root"
+variable "ssm_cnm_publisher_principals_name" {
+  description = "SSM parameter name with comma-separated publisher principal ARNs for the CNM-R topic. Empty = use cnm_publisher_principal_arns."
+  type        = string
+  default     = ""
+}
+
 variable "cnm_collection_allowlist" {
   description = "Comma-separated list of collection short names to process. Empty = all collections."
   type        = string

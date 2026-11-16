@@ -50,6 +50,25 @@ resource "aws_sns_topic" "cnm_response" {
   }
 }
 
+data "aws_ssm_parameter" "cnm_publisher_principals" {
+  count = var.ssm_cnm_publisher_principals_name != "" ? 1 : 0
+  name  = var.ssm_cnm_publisher_principals_name
+}
+
+locals {
+  # Always include this account's root, then add any extra principals from
+  # the tfvars list and/or the SSM parameter on top.
+  cnm_publisher_principals = distinct(concat(
+    ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"],
+    var.cnm_publisher_principal_arns,
+    var.ssm_cnm_publisher_principals_name != ""
+    # Only entries starting with "arn:" are used, so a placeholder like
+    # "none" (SSM can't store empty values) adds nothing.
+    ? [for a in split(",", data.aws_ssm_parameter.cnm_publisher_principals[0].value) : trimspace(a) if startswith(trimspace(a), "arn:")]
+    : [],
+  ))
+}
+
 resource "aws_sns_topic_policy" "cnm_response" {
   arn = aws_sns_topic.cnm_response.arn
 
@@ -82,7 +101,7 @@ resource "aws_sns_topic_policy" "cnm_response" {
         Sid    = "AllowPublish"
         Effect = "Allow"
         Principal = {
-          AWS = length(var.cnm_publisher_principal_arns) > 0 ? var.cnm_publisher_principal_arns : ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+          AWS = local.cnm_publisher_principals
         }
         Action   = "SNS:Publish"
         Resource = aws_sns_topic.cnm_response.arn
