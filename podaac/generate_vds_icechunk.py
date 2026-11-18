@@ -243,6 +243,7 @@ def main(
     preprocess_fn = PREPROCESS_FUNCTIONS.get(preprocess) if preprocess else None
 
     logging.info("Collection: %s", collection)
+    logging.info("Output bucket: s3://%s/virtual_collections/%s/", output_bucket, collection)
     logging.info("Vars: %s", loadable_coord_vars)
     logging.info("start_date: %s", start_date)
     logging.info("end_date: %s", end_date)
