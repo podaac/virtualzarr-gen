@@ -15,19 +15,16 @@ import boto3
 
 STAGES = {
     "sit": {
-        "output_bucket": "podaac-sit-services-cloud-optimizer",
         "staging_bucket": "simon-vds-staging",
         "ssm_edl_username": "generate-edl-username",
         "ssm_edl_password": "generate-edl-password",
     },
     "uat": {
-        "output_bucket": "podaac-uat-services-cloud-optimizer",
         "staging_bucket": "simon-vds-staging",
         "ssm_edl_username": "generate-edl-username",
         "ssm_edl_password": "generate-edl-password",
     },
     "ops": {
-        "output_bucket": "podaac-ops-services-cloud-optimizer",
         "staging_bucket": "",
         "ssm_edl_username": "generate-edl-username",
         "ssm_edl_password": "generate-edl-password",
@@ -45,7 +42,6 @@ def run_task(args):
     env_overrides = [
         {"name": "COLLECTION", "value": args.collection},
         {"name": "LOADABLE_VARS", "value": args.loadable_vars},
-        {"name": "OUTPUT_BUCKET", "value": stage_config["output_bucket"]},
         #{"name": "STAGING_BUCKET", "value": stage_config["staging_bucket"]},
         {"name": "SSM_EDL_USERNAME", "value": stage_config["ssm_edl_username"]},
         {"name": "SSM_EDL_PASSWORD", "value": stage_config["ssm_edl_password"]},
@@ -55,6 +51,10 @@ def run_task(args):
         {"name": "MEMORY_LIMIT", "value": args.memory_limit},
         {"name": "BATCH_SIZE", "value": str(args.batch_size)},
     ]
+
+    if args.output_bucket:
+        # Otherwise the task definition's per-stage default bucket is used.
+        env_overrides.append({"name": "OUTPUT_BUCKET", "value": args.output_bucket})
 
     ecs = boto3.client("ecs", region_name="us-west-2")
     ec2 = boto3.client("ec2", region_name="us-west-2")
@@ -85,6 +85,7 @@ def run_task(args):
     print(f"Task definition: {task_definition}")
     print(f"Collection:      {args.collection}")
     print(f"Stage:           {args.stage}")
+    print(f"Output bucket:   {args.output_bucket or '(stage default)'}")
     print()
 
     response = ecs.run_task(
@@ -136,6 +137,7 @@ def main():
     )
     parser.add_argument("--collection", required=True, help="Earthdata collection short name")
     parser.add_argument("--stage", required=True, choices=["sit", "uat", "ops"], help="Deployment stage")
+    parser.add_argument("--output-bucket", default=None, help="Custom output bucket (default: the stage's Cumulus public bucket)")
     parser.add_argument("--loadable-vars", default="latitude,longitude,time", help="Comma-separated coordinate vars")
     parser.add_argument("--start-date", default=None, help="Start date (e.g., 2022-01-01)")
     parser.add_argument("--end-date", default=None, help="End date (e.g., 2025-01-01)")

@@ -62,7 +62,7 @@ resource "aws_ecs_task_definition" "app" {
         { "name": "LOADABLE_VARS", "value": "" },
         { "name": "COLLECTION", "value": "" },
         { "name": "END_DATE", "value": "" },
-        { "name": "OUTPUT_BUCKET", "value": "" },
+        { "name": "OUTPUT_BUCKET", "value": local.store_bucket },
         { "name": "START_DATE", "value": "" },
         { "name": "SSM_EDL_USERNAME", "value": "" },
         { "name": "SSM_EDL_PASSWORD", "value": "" },

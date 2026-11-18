@@ -45,4 +45,5 @@ if [[ -n "$endDate" ]]; then
   cmd_args+=(--end-date "$endDate")
 fi
 
-exec generate-vds-icechunk "${cmd_args[@]}" --output-bucket "$OUTPUT_BUCKET"
+# OUTPUT_BUCKET is set per-stage by the ECS task definition; the CLI reads it from the environment.
+exec generate-vds-icechunk "${cmd_args[@]}"

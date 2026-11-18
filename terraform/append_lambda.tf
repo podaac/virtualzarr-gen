@@ -117,7 +117,7 @@ resource "aws_lambda_function" "append_granule" {
 
   environment {
     variables = {
-      STORE_BUCKET     = var.output_bucket[0]
+      STORE_BUCKET     = local.store_bucket
       SSM_EDL_USERNAME = var.ssm_edl_username_name
       SSM_EDL_PASSWORD = var.ssm_edl_password_name
       SSM_EDL_TOKEN    = var.ssm_edl_token_name

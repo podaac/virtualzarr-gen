@@ -20,6 +20,14 @@ variable "output_bucket" {
     type = list(string)
 }
 
+# Optional override for where icechunk stores are written. Leave empty to use
+# the per-stage default (see local.store_bucket in locals.tf). The bucket must
+# also be listed in output_bucket so the IAM policies grant access to it.
+variable "store_bucket" {
+    type    = string
+    default = ""
+}
+
 variable "region" {
     default = "us-west-2"
     type = string
